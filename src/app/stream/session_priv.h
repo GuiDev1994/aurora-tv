@@ -10,6 +10,7 @@
 #include "embed_wrapper.h"
 
 typedef struct app_t app_t;
+typedef struct microphone_capture_t microphone_capture_t;
 
 struct session_t {
     session_config_t config;
@@ -37,6 +38,7 @@ struct session_t {
     SDL_mutex *mutex;
     SDL_Thread *thread;
     SS4S_Player *player;
+    microphone_capture_t *microphone_capture;
 };
 
 void session_set_state(session_t *session, STREAMING_STATE state);

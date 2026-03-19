@@ -16,6 +16,7 @@
 #include "input/input_gamepad.h"
 #include "app_session.h"
 #include "session_worker.h"
+#include "audio/microphone_capture.h"
 #include "stream/input/session_virt_mouse.h"
 
 // Expected luminance values in SEI are in units of 0.0001 cd/m2
@@ -87,10 +88,12 @@ void session_destroy(session_t *session) {
     session_interrupt(session, false, STREAMING_INTERRUPT_QUIT);
     session_input_deinit(&session->input);
     SDL_WaitThread(session->thread, NULL);
+    microphone_capture_destroy(session->microphone_capture);
     serverdata_free(session->server);
     SDL_DestroyCond(session->cond);
     SDL_DestroyMutex(session->mutex);
     SDL_DestroyMutex(session->state_lock);
+    free(session->config.microphone_device);
     free(session->app_name);
     free(session);
 }
@@ -261,8 +264,10 @@ void session_config_init(app_t *app, session_config_t *config, const SERVER_DATA
     config->vmouse = app_config->virtual_mouse;
     config->hardware_mouse = app_config->hardware_mouse;
     config->local_audio = app_config->localaudio;
+    config->microphone_device = app_config->microphone_device != NULL ? strdup(app_config->microphone_device) : NULL;
     config->view_only = app_config->viewonly;
     config->sops = app_config->sops;
+    config->stream.enableMic = app_config->enable_microphone;
     if (app_config->stick_deadzone < 0) {
         config->stick_deadzone = 0;
     } else if (app_config->stick_deadzone > 100) {
@@ -336,6 +341,9 @@ void session_config_init(app_t *app, session_config_t *config, const SERVER_DATA
         config->stream.bitrate = (int) ((int64_t) config->stream.bitrate * 125 / 100);
     }
     config->stream.encryptionFlags = ENCFLG_AUDIO;
+    if (config->stream.enableMic) {
+        config->stream.encryptionFlags |= ENCFLG_MICROPHONE;
+    }
 }
 
 /**

@@ -53,8 +53,10 @@ void settings_initialize(app_settings_t *config, char *conf_dir) {
     set_string(&config->audio_backend, "auto");
     set_string(&config->decoder, "auto");
     config->audio_device = NULL;
+    set_string(&config->microphone_device, "");
     config->sops = true;
     config->localaudio = false;
+    config->enable_microphone = false;
     config->fullscreen = true;
     if (!config->fullscreen) {
         config->window_state.w = 1280;
@@ -139,6 +141,10 @@ bool settings_save(app_settings_t *config) {
     if (config->audio_device && config->audio_device[0]) {
         ini_write_string(fp, "device", config->audio_device);
     }
+    ini_write_bool(fp, "microphone", config->enable_microphone);
+    if (config->microphone_device && config->microphone_device[0]) {
+        ini_write_string(fp, "microphone_device", config->microphone_device);
+    }
     ini_write_string(fp, "surround", serialize_audio_config(config->stream.audioConfiguration));
 
     if (!config->fullscreen) {
@@ -156,6 +162,7 @@ void settings_clear(app_settings_t *config) {
     free_nullable(config->decoder);
     free_nullable(config->audio_backend);
     free_nullable(config->audio_device);
+    free_nullable(config->microphone_device);
     free_nullable(config->language);
     free_nullable(config->ini_path);
     free_nullable(config->condb_path);
@@ -271,6 +278,10 @@ static int settings_parse(app_settings_t *config, const char *section, const cha
         set_string(&config->audio_backend, value);
     } else if (INI_FULL_MATCH("audio", "device")) {
         set_string(&config->audio_device, value);
+    } else if (INI_FULL_MATCH("audio", "microphone")) {
+        config->enable_microphone = INI_IS_TRUE(value);
+    } else if (INI_FULL_MATCH("audio", "microphone_device")) {
+        set_string(&config->microphone_device, value);
     } else if (INI_NAME_MATCH("language")) {
         set_string(&config->language, value);
     } else if (INI_NAME_MATCH("fullscreen")) {

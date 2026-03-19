@@ -9,6 +9,8 @@
 #include "ss4s.h"
 #include "ss4s_modules.h"
 
+#include <SDL.h>
+
 typedef struct audio_pane_t {
     lv_fragment_t base;
     settings_controller_t *parent;
@@ -17,6 +19,8 @@ typedef struct audio_pane_t {
 
     pref_dropdown_string_entry_t *adec_entries;
     int adec_entries_len;
+    pref_dropdown_string_entry_t *mic_entries;
+    int mic_entries_len;
 
     pref_dropdown_int_entry_t surround_entries[3];
     int surround_entries_len;
@@ -31,6 +35,8 @@ static void pane_ctor(lv_fragment_t *self, void *args);
 static void pane_dtor(lv_fragment_t *self);
 
 static void module_changed_cb(lv_event_t *e);
+
+static void microphone_checkbox_changed_cb(lv_event_t *e);
 
 const lv_fragment_class_t settings_pane_audio_cls = {
     .constructor_cb = pane_ctor,
@@ -76,11 +82,38 @@ static void pane_ctor(lv_fragment_t *self, void *args) {
         entry->fallback = config.configuration == AUDIO_CONFIGURATION_STEREO;
         pane->surround_entries_len++;
     }
+
+    const bool audio_was_initialized = SDL_WasInit(SDL_INIT_AUDIO) != 0;
+    int microphone_device_count = 0;
+    if (audio_was_initialized || SDL_InitSubSystem(SDL_INIT_AUDIO) == 0) {
+        microphone_device_count = SDL_GetNumAudioDevices(SDL_TRUE);
+    }
+
+    pane->mic_entries = calloc((size_t) microphone_device_count + 2, sizeof(pref_dropdown_string_entry_t));
+    set_decoder_entry(&pane->mic_entries[pane->mic_entries_len++], locstr("Default system microphone"), "", true);
+    for (int i = 0; i < microphone_device_count; i++) {
+        const char *name = SDL_GetAudioDeviceName(i, SDL_TRUE);
+        if (name == NULL || name[0] == '\0' || contains_decoder_group(pane->mic_entries, pane->mic_entries_len, name)) {
+            continue;
+        }
+        set_decoder_entry(&pane->mic_entries[pane->mic_entries_len++], name, name, false);
+    }
+    if (app_configuration->microphone_device != NULL &&
+        app_configuration->microphone_device[0] != '\0' &&
+        !contains_decoder_group(pane->mic_entries, pane->mic_entries_len, app_configuration->microphone_device)) {
+        set_decoder_entry(&pane->mic_entries[pane->mic_entries_len++], app_configuration->microphone_device,
+                          app_configuration->microphone_device, false);
+    }
+
+    if (!audio_was_initialized && SDL_WasInit(SDL_INIT_AUDIO) != 0) {
+        SDL_QuitSubSystem(SDL_INIT_AUDIO);
+    }
 }
 
 static void pane_dtor(lv_fragment_t *self) {
     audio_pane_t *pane = (audio_pane_t *) self;
     free(pane->adec_entries);
+    free(pane->mic_entries);
 }
 
 static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
@@ -115,8 +148,25 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
                                               &app_configuration->stream.audioConfiguration, NULL);
     lv_obj_set_width(ch_dropdown, LV_PCT(100));
 
-    lv_obj_add_event_cb(adec_dropdown, module_changed_cb, LV_EVENT_VALUE_CHANGED, controller);
+    pref_header(view, locstr("Microphone Settings"));
 
+    lv_obj_t *mic_checkbox = pref_checkbox(view, locstr("Enable microphone streaming"),
+                                           &app_configuration->enable_microphone, false);
+    pref_desc_label(view, locstr("Streams local microphone audio to the host when microphone passthrough is available."),
+                    false);
+
+    pref_title_label(view, locstr("Microphone input"));
+    lv_obj_t *mic_dropdown = pref_dropdown_string(view, controller->mic_entries, controller->mic_entries_len,
+                                                  &app_configuration->microphone_device);
+    lv_obj_set_width(mic_dropdown, LV_PCT(100));
+    if (!app_configuration->enable_microphone) {
+        lv_obj_add_state(mic_dropdown, LV_STATE_DISABLED);
+    }
+    pref_desc_label(view, locstr("Choose which local microphone Moonlight captures. Leave this on the default option to follow the system input device."),
+                    false);
+
+    lv_obj_add_event_cb(adec_dropdown, module_changed_cb, LV_EVENT_VALUE_CHANGED, controller);
+    lv_obj_add_event_cb(mic_checkbox, microphone_checkbox_changed_cb, LV_EVENT_VALUE_CHANGED, mic_dropdown);
     return view;
 }
 
@@ -130,4 +180,13 @@ static void module_changed_cb(lv_event_t *e) {
     settings_controller_t *parent = fragment->parent;
     parent->needs_restart = true;
     update_conflict_hint(parent->app, fragment->conflict_hint);
+}
+
+static void microphone_checkbox_changed_cb(lv_event_t *e) {
+    lv_obj_t *dropdown = (lv_obj_t *) lv_event_get_user_data(e);
+    if (app_configuration->enable_microphone) {
+        lv_obj_clear_state(dropdown, LV_STATE_DISABLED);
+    } else {
+        lv_obj_add_state(dropdown, LV_STATE_DISABLED);
+    }
 }
