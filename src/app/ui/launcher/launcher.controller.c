@@ -53,6 +53,8 @@ static void cb_launcher_nav_cancel_preprocess(lv_event_t *event);
 
 static void launcher_nav_edge_cb(lv_group_t *group, bool at_next_edge);
 
+static void launcher_open_games_pane_if_collapsed(launcher_fragment_t *fragment);
+
 static void cb_detail_focused(lv_event_t *event);
 
 static void cb_detail_cancel(lv_event_t *event);
@@ -211,6 +213,9 @@ static void launcher_view_init(lv_fragment_t *self, lv_obj_t *view) {
     lv_obj_set_style_transition(fragment->detail, &fragment->tr_nav, 0);
     lv_obj_set_style_transition(fragment->detail, &fragment->tr_detail, LV_STATE_USER_1);
     current_instance = fragment;
+    /* Default LVGL group uses wrap=1: last+RIGHT wraps to first, so edge_cb never runs. Encoder
+     * remotes map LEFT/RIGHT to focus_prev/next, not KEY events — edges are how we open games. */
+    lv_group_set_wrap(fragment->nav_group, false);
     lv_group_set_edge_cb(fragment->nav_group, launcher_nav_edge_cb);
 
     if (fragment->first_created) {
@@ -426,37 +431,40 @@ static void cb_nav_focused(lv_event_t *event) {
     set_detail_opened(controller, false);
 }
 
+static void launcher_open_games_pane_if_collapsed(launcher_fragment_t *fragment) {
+    if (fragment->detail_opened) { return; }
+    lv_fragment_t *detail_fragment = lv_fragment_manager_find_by_container(fragment->base.child_manager,
+                                                                         fragment->detail);
+    if (!detail_fragment) { return; }
+    set_detail_opened(fragment, true);
+}
+
 static void cb_launcher_open_detail_key_preprocess(lv_event_t *event) {
     launcher_fragment_t *fragment = lv_event_get_user_data(event);
     uint32_t key = lv_event_get_key(event);
     if (key != LV_KEY_RIGHT && key != LV_KEY_LEFT && key != LV_KEY_ESC) { return; }
-    if (fragment->detail_opened) { return; }
-    lv_fragment_t *detail_fragment = lv_fragment_manager_find_by_container(fragment->base.child_manager,
-                                                                         fragment->detail);
-    if (!detail_fragment) { return; }
-    set_detail_opened(fragment, true);
-    lv_event_stop_processing(event);
+    launcher_open_games_pane_if_collapsed(fragment);
+    if (fragment->detail_opened) {
+        lv_event_stop_processing(event);
+    }
 }
 
 static void cb_launcher_nav_cancel_preprocess(lv_event_t *event) {
     launcher_fragment_t *fragment = lv_event_get_user_data(event);
-    if (fragment->detail_opened) { return; }
-    lv_fragment_t *detail_fragment = lv_fragment_manager_find_by_container(fragment->base.child_manager,
-                                                                         fragment->detail);
-    if (!detail_fragment) { return; }
-    set_detail_opened(fragment, true);
-    lv_event_stop_processing(event);
+    launcher_open_games_pane_if_collapsed(fragment);
+    if (fragment->detail_opened) {
+        lv_event_stop_processing(event);
+    }
 }
 
 static void launcher_nav_edge_cb(lv_group_t *group, bool at_next_edge) {
     (void) group;
-    if (at_next_edge) { return; }
+    (void) at_next_edge;
+    /* Encoder / TV remote: LEFT/RIGHT become focus_prev/next with no KEY event. Prev edge =
+     * first item + “left”; next edge = last item + “right”. Both should open the games pane. */
     launcher_fragment_t *fragment = launcher_instance();
-    if (fragment == NULL || fragment->detail_opened) { return; }
-    lv_fragment_t *detail_fragment = lv_fragment_manager_find_by_container(fragment->base.child_manager,
-                                                                           fragment->detail);
-    if (!detail_fragment) { return; }
-    set_detail_opened(fragment, true);
+    if (fragment == NULL) { return; }
+    launcher_open_games_pane_if_collapsed(fragment);
 }
 
 static void cb_nav_key(lv_event_t *event) {
@@ -474,11 +482,7 @@ static void cb_nav_key(lv_event_t *event) {
         }
         case LV_KEY_RIGHT:
         case LV_KEY_LEFT: {
-            lv_fragment_t *detail_fragment = lv_fragment_manager_find_by_container(fragment->base.child_manager,
-                                                                                   fragment->detail);
-            if (detail_fragment) {
-                set_detail_opened(fragment, true);
-            }
+            launcher_open_games_pane_if_collapsed(fragment);
             break;
         }
     }
