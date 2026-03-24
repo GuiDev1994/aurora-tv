@@ -35,9 +35,6 @@ typedef struct {
     apploader_list_t *apploader_apps;
     const char *apploader_error;
 
-    lv_obj_t *host_header;
-    lv_obj_t *host_title_label;
-    lv_obj_t *apps_content;
     lv_obj_t *applist, *appload, *apperror;
     lv_obj_t *errortitle, *errorhint, *errordetail;
     lv_obj_t *actions;

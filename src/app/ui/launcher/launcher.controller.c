@@ -11,7 +11,6 @@
 #include "ui/root.h"
 #include "ui/settings/settings.controller.h"
 
-#include "lvgl.h"
 #include "lvgl/font/material_icons_regular_symbols.h"
 #include "lvgl/util/lv_app_utils.h"
 #include "lv_gridview.h"
@@ -46,14 +45,6 @@ static void cb_pc_longpress(lv_event_t *event);
 static void cb_nav_focused(lv_event_t *event);
 
 static void cb_nav_key(lv_event_t *event);
-
-static void cb_launcher_open_detail_key_preprocess(lv_event_t *event);
-
-static void cb_launcher_nav_cancel_preprocess(lv_event_t *event);
-
-static void launcher_nav_edge_cb(lv_group_t *group, bool at_next_edge);
-
-static void launcher_open_games_pane_if_collapsed(launcher_fragment_t *fragment);
 
 static void cb_detail_focused(lv_event_t *event);
 
@@ -138,23 +129,16 @@ static void launcher_controller(lv_fragment_t *self, void *args) {
     int ico_width_def = lv_txt_get_width(MAT_SYMBOL_SETTINGS, sizeof(MAT_SYMBOL_SETTINGS), ui->fonts.icons.normal, 0,
                                          0);
     int host_icon_pad = (LV_DPX(NAV_WIDTH_COLLAPSED) - ico_width_def) / 2;
-    lv_style_set_radius(&fragment->nav_host_style, LV_DPX(10));
     lv_style_set_pad_left(&fragment->nav_host_style, host_icon_pad);
-    lv_style_set_pad_right(&fragment->nav_host_style, LV_DPX(8));
-    lv_style_set_pad_ver(&fragment->nav_host_style, LV_DPX(10));
     lv_style_set_pad_gap(&fragment->nav_host_style, host_icon_pad);
-    lv_style_set_bg_opa(&fragment->nav_host_style, LV_OPA_TRANSP);
 
     lv_style_init(&fragment->nav_menu_style);
     lv_style_set_border_side(&fragment->nav_menu_style, LV_BORDER_SIDE_NONE);
-    lv_style_set_radius(&fragment->nav_menu_style, LV_DPX(10));
-    lv_style_set_pad_ver(&fragment->nav_menu_style, LV_DPX(12));
+    lv_style_set_pad_ver(&fragment->nav_menu_style, LV_DPX(10));
     int ico_width_sm = lv_txt_get_width(MAT_SYMBOL_SETTINGS, sizeof(MAT_SYMBOL_SETTINGS), ui->fonts.icons.small, 0, 0);
     int nav_icon_pad = (LV_DPX(NAV_WIDTH_COLLAPSED) - ico_width_sm) / 2;
     lv_style_set_pad_left(&fragment->nav_menu_style, nav_icon_pad);
-    lv_style_set_pad_right(&fragment->nav_menu_style, LV_DPX(8));
     lv_style_set_pad_gap(&fragment->nav_menu_style, nav_icon_pad);
-    lv_style_set_bg_opa(&fragment->nav_menu_style, LV_OPA_TRANSP);
 
     fragment->detail_opened = false;
     fragment->pane_initialized = false;
@@ -172,14 +156,6 @@ static void launcher_view_init(lv_fragment_t *self, lv_obj_t *view) {
     LV_UNUSED(view);
     launcher_fragment_t *fragment = (launcher_fragment_t *) self;
     pcmanager_register_listener(pcmanager, &pcmanager_callbacks, fragment);
-    /* Back / cancel on collapsed nav opens games (original TV behavior); avoid quit dialog. */
-    lv_obj_add_event_cb(fragment->nav, cb_launcher_nav_cancel_preprocess,
-                        LV_EVENT_CANCEL | LV_EVENT_PREPROCESS, fragment);
-    /* Open games pane: RIGHT/LEFT/ESC before pclist/nav consume keys as scroll. */
-    lv_obj_add_event_cb(fragment->nav, cb_launcher_open_detail_key_preprocess,
-                        LV_EVENT_KEY | LV_EVENT_PREPROCESS, fragment);
-    lv_obj_add_event_cb(fragment->pclist, cb_launcher_open_detail_key_preprocess,
-                        LV_EVENT_KEY | LV_EVENT_PREPROCESS, fragment);
     lv_obj_add_event_cb(fragment->nav, cb_nav_focused, LV_EVENT_FOCUSED, fragment);
     lv_obj_add_event_cb(fragment->nav, cb_nav_key, LV_EVENT_KEY, fragment);
     lv_obj_add_event_cb(fragment->nav, app_quit_confirm, LV_EVENT_CANCEL, fragment);
@@ -213,10 +189,6 @@ static void launcher_view_init(lv_fragment_t *self, lv_obj_t *view) {
     lv_obj_set_style_transition(fragment->detail, &fragment->tr_nav, 0);
     lv_obj_set_style_transition(fragment->detail, &fragment->tr_detail, LV_STATE_USER_1);
     current_instance = fragment;
-    /* Default LVGL group uses wrap=1: last+RIGHT wraps to first, so edge_cb never runs. Encoder
-     * remotes map LEFT/RIGHT to focus_prev/next, not KEY events — edges are how we open games. */
-    lv_group_set_wrap(fragment->nav_group, false);
-    lv_group_set_edge_cb(fragment->nav_group, launcher_nav_edge_cb);
 
     if (fragment->first_created) {
         if (!app_decoder_or_embedded_present(fragment->global)) {
@@ -360,19 +332,14 @@ static lv_obj_t *pclist_item_create(launcher_fragment_t *fragment, const pclist_
     lv_obj_t *pcitem = lv_list_add_btn(fragment->pclist, icon, server->hostname);
     lv_obj_add_flag(pcitem, LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_add_style(pcitem, &fragment->nav_host_style, 0);
-    lv_obj_set_style_text_color(pcitem, lv_color_hex(0xe2e8f0), 0);
     lv_obj_t *btn_img = lv_btn_find_img(pcitem);
     lv_obj_set_style_text_font(btn_img, ui->fonts.icons.normal, 0);
-    lv_obj_set_style_text_color(btn_img, lv_color_hex(0x38bdf8), 0);
     lv_obj_set_style_bg_opa(btn_img, LV_OPA_COVER, LV_STATE_CHECKED);
-    lv_obj_set_style_bg_color(btn_img, lv_color_hex(0x38bdf8), LV_STATE_CHECKED);
-    lv_obj_set_style_text_color(btn_img, lv_color_hex(0x0f172a), LV_STATE_CHECKED);
-    lv_obj_set_style_radius(btn_img, LV_DPX(8), LV_STATE_CHECKED);
-    lv_obj_set_style_outline_color(btn_img, lv_color_hex(0x7dd3fc), LV_STATE_CHECKED);
+    lv_obj_set_style_text_color(btn_img, lv_color_black(), LV_STATE_CHECKED);
+    lv_obj_set_style_radius(btn_img, LV_DPX(1), LV_STATE_CHECKED);
+    lv_obj_set_style_outline_color(btn_img, lv_color_white(), LV_STATE_CHECKED);
     lv_obj_set_style_outline_opa(btn_img, LV_OPA_COVER, LV_STATE_CHECKED);
     lv_obj_set_style_outline_width(btn_img, LV_DPX(2), LV_STATE_CHECKED);
-    lv_obj_set_style_bg_color(pcitem, lv_color_hex(0x1e293b), LV_STATE_CHECKED);
-    lv_obj_set_style_bg_opa(pcitem, LV_OPA_90, LV_STATE_CHECKED);
     uuidstr_t *uuid = SDL_malloc(sizeof(uuidstr_t));
     *uuid = node->id;
     lv_obj_set_user_data(pcitem, uuid);
@@ -431,42 +398,6 @@ static void cb_nav_focused(lv_event_t *event) {
     set_detail_opened(controller, false);
 }
 
-static void launcher_open_games_pane_if_collapsed(launcher_fragment_t *fragment) {
-    if (fragment->detail_opened) { return; }
-    lv_fragment_t *detail_fragment = lv_fragment_manager_find_by_container(fragment->base.child_manager,
-                                                                         fragment->detail);
-    if (!detail_fragment) { return; }
-    set_detail_opened(fragment, true);
-}
-
-static void cb_launcher_open_detail_key_preprocess(lv_event_t *event) {
-    launcher_fragment_t *fragment = lv_event_get_user_data(event);
-    uint32_t key = lv_event_get_key(event);
-    if (key != LV_KEY_RIGHT && key != LV_KEY_LEFT && key != LV_KEY_ESC) { return; }
-    launcher_open_games_pane_if_collapsed(fragment);
-    if (fragment->detail_opened) {
-        lv_event_stop_processing(event);
-    }
-}
-
-static void cb_launcher_nav_cancel_preprocess(lv_event_t *event) {
-    launcher_fragment_t *fragment = lv_event_get_user_data(event);
-    launcher_open_games_pane_if_collapsed(fragment);
-    if (fragment->detail_opened) {
-        lv_event_stop_processing(event);
-    }
-}
-
-static void launcher_nav_edge_cb(lv_group_t *group, bool at_next_edge) {
-    (void) group;
-    (void) at_next_edge;
-    /* Encoder / TV remote: LEFT/RIGHT become focus_prev/next with no KEY event. Prev edge =
-     * first item + “left”; next edge = last item + “right”. Both should open the games pane. */
-    launcher_fragment_t *fragment = launcher_instance();
-    if (fragment == NULL) { return; }
-    launcher_open_games_pane_if_collapsed(fragment);
-}
-
 static void cb_nav_key(lv_event_t *event) {
     launcher_fragment_t *fragment = lv_event_get_user_data(event);
     switch (lv_event_get_key(event)) {
@@ -480,9 +411,12 @@ static void cb_nav_key(lv_event_t *event) {
             lv_group_focus_next(group);
             break;
         }
-        case LV_KEY_RIGHT:
-        case LV_KEY_LEFT: {
-            launcher_open_games_pane_if_collapsed(fragment);
+        case LV_KEY_RIGHT: {
+            lv_fragment_t *detail_fragment = lv_fragment_manager_find_by_container(fragment->base.child_manager,
+                                                                                   fragment->detail);
+            if (detail_fragment) {
+                set_detail_opened(fragment, true);
+            }
             break;
         }
     }
@@ -537,7 +471,7 @@ static void show_decoder_error() {
 #if FEATURE_EMBEDDED_SHELL
     lv_label_set_text_static(msgview, locstr("Streaming can't work without a valid decoder.\n"
                                              "(If your device supports moonlight-embedded, install it "
-                                             "and Moonlight will use it automatically.)"));
+                                             "and Aurora will use it automatically.)"));
 #else
     lv_label_set_text_static(msgview, locstr("Streaming can't work without a valid decoder."));
 #endif

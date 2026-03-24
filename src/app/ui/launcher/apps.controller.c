@@ -102,8 +102,6 @@ static void app_detail_dialog(apps_fragment_t *fragment, const apploader_item_t 
 
 static void app_detail_click_cb(lv_event_t *event);
 
-static void launcher_network_test(apps_fragment_t *controller, const apploader_item_t *app);
-
 static void set_actions(apps_fragment_t *controller, const char **labels, const action_cb_t *callbacks);
 
 /**
@@ -184,56 +182,13 @@ static lv_obj_t *apps_view(lv_fragment_t *self, lv_obj_t *container) {
     lv_obj_add_flag(view, LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_set_size(view, LV_PCT(100), LV_PCT(100));
     lv_obj_set_scroll_dir(view, LV_DIR_NONE);
-    lv_obj_set_layout(view, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(view, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_bg_opa(view, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_pad_all(view, 0, 0);
-    lv_obj_set_style_pad_gap(view, 0, 0);
 
-    lv_obj_t *host_header = controller->host_header = lv_obj_create(view);
-    lv_obj_remove_style_all(host_header);
-    lv_obj_set_size(host_header, LV_PCT(100), LV_DPX(64));
-    lv_obj_set_style_bg_color(host_header, lv_color_hex(0x0c1322), 0);
-    lv_obj_set_style_bg_opa(host_header, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_side(host_header, LV_BORDER_SIDE_BOTTOM, 0);
-    lv_obj_set_style_border_width(host_header, LV_DPX(1), 0);
-    lv_obj_set_style_border_color(host_header, lv_color_hex(0x38bdf8), 0);
-    lv_obj_set_style_border_opa(host_header, LV_OPA_40, 0);
-    lv_obj_set_style_pad_left(host_header, LV_DPX(28), 0);
-    lv_obj_set_style_pad_right(host_header, LV_DPX(28), 0);
-    lv_obj_set_style_pad_ver(host_header, LV_DPX(12), 0);
-    lv_obj_set_flex_flow(host_header, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(host_header, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
-    lv_obj_clear_flag(host_header, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *host_title = controller->host_title_label = lv_label_create(host_header);
-    lv_obj_set_style_text_font(host_title, lv_theme_get_font_large(host_header), 0);
-    lv_obj_set_style_text_color(host_title, lv_color_hex(0xf8fafc), 0);
-    if (controller->node && controller->node->server) {
-        lv_label_set_text(host_title, controller->node->server->hostname);
-    } else {
-        lv_label_set_text_static(host_title, "");
-    }
-
-    lv_obj_t *host_sub = lv_label_create(host_header);
-    lv_obj_set_style_text_font(host_sub, lv_theme_get_font_small(host_header), 0);
-    lv_obj_set_style_text_color(host_sub, lv_color_hex(0x64748b), 0);
-    lv_label_set_text_static(host_sub, locstr("Games on this PC"));
-
-    lv_obj_t *content = controller->apps_content = lv_obj_create(view);
-    lv_obj_remove_style_all(content);
-    lv_obj_set_width(content, LV_PCT(100));
-    lv_obj_set_flex_grow(content, 1);
-    lv_obj_set_style_min_height(content, 0, 0);
-    lv_obj_clear_flag(content, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_opa(content, LV_OPA_TRANSP, 0);
-
-    lv_obj_t *applist = controller->applist = lv_gridview_create(content);
+    lv_obj_t *applist = controller->applist = lv_gridview_create(view);
     lv_obj_add_flag(applist, LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_set_scroll_dir(applist, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(applist, LV_SCROLLBAR_MODE_ACTIVE);
-    lv_obj_set_style_pad_all(applist, lv_dpx(28), 0);
-    lv_obj_set_style_pad_gap(applist, lv_dpx(28), 0);
+    lv_obj_set_style_pad_all(applist, lv_dpx(24), 0);
+    lv_obj_set_style_pad_gap(applist, lv_dpx(24), 0);
     lv_obj_set_style_radius(applist, 0, 0);
     lv_obj_set_style_border_side(applist, LV_BORDER_SIDE_NONE, 0);
     lv_obj_set_style_bg_opa(applist, 0, 0);
@@ -241,44 +196,30 @@ static lv_obj_t *apps_view(lv_fragment_t *self, lv_obj_t *container) {
     lv_obj_update_layout(applist);
 
     lv_gridview_set_adapter(applist, &apps_adapter);
-    lv_obj_t *appload = controller->appload = lv_spinner_create(content, 1000, 60);
+    lv_obj_t *appload = controller->appload = lv_spinner_create(view, 1000, 60);
     launcher_fragment_t *parent_controller = (launcher_fragment_t *) lv_fragment_get_parent(&controller->base);
     lv_group_add_obj(parent_controller->detail_group, appload);
     lv_obj_add_flag(appload, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_size(appload, lv_dpx(64), lv_dpx(64));
-    lv_obj_set_style_arc_color(appload, lv_color_hex(0x38bdf8), LV_PART_INDICATOR);
-    lv_obj_set_style_arc_width(appload, LV_DPX(4), LV_PART_INDICATOR);
+    lv_obj_set_size(appload, lv_dpx(60), lv_dpx(60));
     lv_obj_center(appload);
 
-    lv_obj_t *apperror = controller->apperror = lv_obj_create(content);
+    lv_obj_t *apperror = controller->apperror = lv_obj_create(view);
     lv_obj_add_flag(apperror, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_size(apperror, LV_PCT(82), LV_PCT(58));
+    lv_obj_set_size(apperror, LV_PCT(80), LV_PCT(60));
     lv_obj_center(apperror);
-    lv_obj_set_style_bg_color(apperror, lv_color_hex(0x1e293b), 0);
-    lv_obj_set_style_bg_opa(apperror, LV_OPA_90, 0);
-    lv_obj_set_style_radius(apperror, LV_DPX(16), 0);
-    lv_obj_set_style_border_width(apperror, LV_DPX(1), 0);
-    lv_obj_set_style_border_color(apperror, lv_color_hex(0x334155), 0);
-    lv_obj_set_style_border_opa(apperror, LV_OPA_COVER, 0);
-    lv_obj_set_style_pad_all(apperror, LV_DPX(28), 0);
-    lv_obj_set_style_pad_gap(apperror, LV_DPX(16), 0);
     lv_obj_set_flex_flow(apperror, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(apperror, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER);
     lv_obj_t *errortitle = controller->errortitle = lv_label_create(apperror);
     lv_obj_set_width(errortitle, LV_PCT(100));
     lv_obj_set_style_text_font(errortitle, lv_theme_get_font_large(apperror), 0);
-    lv_obj_set_style_text_color(errortitle, lv_color_hex(0xf1f5f9), 0);
     lv_obj_t *errorlabel = controller->errorhint = lv_label_create(apperror);
     lv_obj_set_width(errorlabel, LV_PCT(100));
-    lv_obj_set_style_text_color(errorlabel, lv_color_hex(0x94a3b8), 0);
     lv_obj_t *errordetail = controller->errordetail = lv_label_create(apperror);
-    lv_obj_set_style_border_width(errordetail, LV_DPX(1), 0);
-    lv_obj_set_style_border_opa(errordetail, LV_OPA_60, 0);
-    lv_obj_set_style_border_color(errordetail, lv_color_hex(0x38bdf8), 0);
-    lv_obj_set_style_pad_all(errordetail, LV_DPX(14), 0);
-    lv_obj_set_style_radius(errordetail, LV_DPX(12), 0);
-    lv_obj_set_style_bg_color(errordetail, lv_color_hex(0x0f172a), 0);
-    lv_obj_set_style_bg_opa(errordetail, LV_OPA_80, 0);
+    lv_obj_set_style_border_width(errordetail, LV_DPX(2), 0);
+    lv_obj_set_style_border_opa(errordetail, LV_OPA_50, 0);
+    lv_obj_set_style_border_color(errordetail, lv_palette_main(LV_PALETTE_BLUE_GREY), 0);
+    lv_obj_set_style_pad_all(errordetail, LV_DPX(10), 0);
+    lv_obj_set_style_radius(errordetail, LV_DPX(20), 0);
     lv_obj_set_width(errordetail, LV_PCT(100));
     lv_obj_set_flex_grow(errordetail, 1);
 
@@ -387,9 +328,6 @@ static void on_host_updated(const uuidstr_t *uuid, void *userdata) {
     apps_fragment_t *controller = (apps_fragment_t *) userdata;
     if (controller != current_instance) { return; }
     if (!uuidstr_t_equals_t(&controller->uuid, uuid)) { return; }
-    if (controller->host_title_label && controller->node && controller->node->server) {
-        lv_label_set_text(controller->host_title_label, controller->node->server->hostname);
-    }
     const SERVER_STATE *state = pcmanager_state(pcmanager, uuid);
     assert(state != NULL);
     if (state->code == SERVER_STATE_AVAILABLE) {
@@ -786,10 +724,6 @@ static void open_context_menu(apps_fragment_t *fragment, appitem_viewholder_t *h
         lv_obj_add_flag(quit_btn, LV_OBJ_FLAG_EVENT_BUBBLE);
         lv_obj_set_user_data(quit_btn, launcher_quit_game);
     }
-
-    lv_obj_t *nettest_btn = lv_list_add_btn(content, NULL, locstr("Network speed test"));
-    lv_obj_add_flag(nettest_btn, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_user_data(nettest_btn, launcher_network_test);
     lv_obj_t *fav_btn = lv_list_add_btn(content, NULL, app->fav ? locstr("Unstar") : locstr("Star"));
     lv_obj_add_flag(fav_btn, LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_set_user_data(fav_btn, launcher_toggle_fav);
@@ -805,21 +739,6 @@ static void open_context_menu(apps_fragment_t *fragment, appitem_viewholder_t *h
     lv_obj_t *cancel_btn = lv_list_add_btn(content, NULL, locstr("Cancel"));
     lv_obj_add_flag(cancel_btn, LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_center(msgbox);
-}
-
-static void launcher_network_test(apps_fragment_t *controller, const apploader_item_t *app) {
-    LV_ASSERT(app->base.id != 0);
-    streaming_scene_arg_t args = {
-            .global = controller->global,
-            .uuid = controller->uuid,
-            .app = app->base,
-            .network_test = true,
-            .network_test_duration = 10,
-    };
-    app_ui_t *ui = &controller->global->ui;
-    lv_fragment_t *fragment = lv_fragment_create(&streaming_controller_class, &args);
-    lv_obj_t *const *container = lv_fragment_get_container(lv_fragment_manager_get_top(ui->fm));
-    lv_fragment_manager_push(ui->fm, fragment, container);
 }
 
 static void context_menu_cancel_cb(lv_event_t *e) {
@@ -841,8 +760,6 @@ static void context_menu_click_cb(lv_event_t *e) {
         launcher_quit_game(self);
     } else if (lv_obj_get_user_data(target) == launcher_launch_game) {
         launcher_launch_game(self, app);
-    } else if (lv_obj_get_user_data(target) == launcher_network_test) {
-        launcher_network_test(self, app);
     } else if (lv_obj_get_user_data(target) == launcher_toggle_fav) {
         launcher_toggle_fav(self, app);
     } else if (lv_obj_get_user_data(target) == launcher_toggle_hidden) {

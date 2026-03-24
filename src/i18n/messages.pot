@@ -38,7 +38,7 @@ msgid "OK"
 msgstr ""
 
 #: src/app/app.c:278
-msgid "Quit Moonlight?"
+msgid "Quit Aurora?"
 msgstr ""
 
 #: src/app/app_settings.c:33
@@ -209,7 +209,7 @@ msgstr ""
 #: src/app/ui/launcher/launcher.controller.c:472
 msgid ""
 "Streaming can't work without a valid decoder.\n"
-"(If your device supports moonlight-embedded, install it and Moonlight will "
+"(If your device supports moonlight-embedded, install it and Aurora will "
 "use it automatically.)"
 msgstr ""
 
@@ -321,7 +321,7 @@ msgid "Sound Channels (Experimental)"
 msgstr ""
 
 #: src/app/ui/settings/panes/av_pane.c:29
-msgid "Moonlight embedded will pick the suitable decoder automatically"
+msgid "Aurora uses moonlight-embedded to select a suitable decoder automatically."
 msgstr ""
 
 #: src/app/ui/settings/panes/av_pane.c:50
@@ -429,7 +429,7 @@ msgstr ""
 
 #: src/app/ui/settings/panes/input.pane.c:74
 msgid ""
-"Note: Some games can enforce a larger deadzone than what Moonlight is "
+"Note: Some games can enforce a larger deadzone than what Aurora is "
 "configured to use."
 msgstr ""
 

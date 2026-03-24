@@ -72,7 +72,7 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     lv_obj_set_width(deadzone_slider, LV_PCT(100));
     lv_obj_add_event_cb(deadzone_slider, on_deadzone_changed, LV_EVENT_VALUE_CHANGED, pane);
     pref_desc_label(view, locstr("Note: Some games can enforce a larger deadzone "
-                                 "than what Moonlight is configured to use."), false);
+                                 "than what Aurora is configured to use."), false);
 
     pref_checkbox(view, locstr("Virtual mouse"), &app_configuration->virtual_mouse, false);
     pref_desc_label(view, locstr("Press LB + RS to move mouse cursor with sticks. "

@@ -38,7 +38,7 @@ msgid "OK"
 msgstr "确定"
 
 #: src/app/app.c:278
-msgid "Quit Moonlight?"
+msgid "Quit Aurora?"
 msgstr "退出Moonlight？"
 
 #: src/app/app_settings.c:33
@@ -319,7 +319,7 @@ msgid "Sound Channels (Experimental)"
 msgstr "多声道（实验功能）"
 
 #: src/app/ui/settings/panes/av_pane.c:29
-msgid "Moonlight embedded will pick the suitable decoder automatically"
+msgid "Aurora uses moonlight-embedded to select a suitable decoder automatically."
 msgstr "Moonlight embedded会自动选择合适的解码器"
 
 #: src/app/ui/settings/panes/av_pane.c:50

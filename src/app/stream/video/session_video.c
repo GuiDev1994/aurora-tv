@@ -24,6 +24,12 @@
 // 2MB decode size should be fairly enough for everything
 #define DECODER_BUFFER_SIZE (2048 * 1024)
 
+/** Min interval between IDR requests (AV1): avoids control-channel storms vs. gamepad input. */
+#define VDEC_IDR_REQUEST_MIN_INTERVAL_MS 1000
+
+/** Slices hint for pipeline decode while later slices still arrive (high bitrate / 120 Hz). */
+#define VDEC_AV1_SLICES_PER_FRAME 4
+
 /** webOS tight sync: small negative PTS shift (ms) toward panel vsync. */
 #define TIGHT_SYNC_PRESENTATION_OFFSET_MS (-12)
 
@@ -33,6 +39,8 @@ static session_t *session = NULL;
 static SS4S_Player *player = NULL;
 static unsigned char *buffer = NULL;
 static int lastFrameNumber;
+static unsigned long last_idr_request_ms;
+static bool vdec_throttle_idr_requests;
 static struct VIDEO_STATS vdec_temp_stats;
 static int vdec_stream_format = 0;
 VIDEO_STATS vdec_summary_stats;
@@ -54,6 +62,17 @@ DECODER_RENDERER_CALLBACKS ss4s_dec_callbacks = {
         .submitDecodeUnit = vdec_delegate_submit,
         .capabilities = CAPABILITY_DIRECT_SUBMIT,
 };
+
+void session_video_prepare_stream(bool av1_enabled) {
+    int caps = CAPABILITY_DIRECT_SUBMIT;
+    if (av1_enabled) {
+        caps |= CAPABILITY_REFERENCE_FRAME_INVALIDATION_AV1;
+        caps |= CAPABILITY_SLICES_PER_FRAME(VDEC_AV1_SLICES_PER_FRAME);
+        commons_log_info("Session", "AV1 streaming option: RFI + %u slices/frame for SDP negotiation",
+                         (unsigned) VDEC_AV1_SLICES_PER_FRAME);
+    }
+    ss4s_dec_callbacks.capabilities = caps;
+}
 
 static const char *video_format_name(int videoFormat) {
     switch (videoFormat) {
@@ -82,6 +101,8 @@ int vdec_delegate_setup(int videoFormat, int width, int height, int redrawRate, 
     vdec_stream_format = videoFormat;
     vdec_stream_info.format = video_format_name(videoFormat);
     lastFrameNumber = 0;
+    last_idr_request_ms = 0;
+    vdec_throttle_idr_requests = (videoFormat & VIDEO_FORMAT_MASK_AV1) != 0;
     vdec_stream_target_fps = redrawRate > 0 ? redrawRate : 60;
 
     SS4S_VideoInfo info;
@@ -185,6 +206,13 @@ int vdec_delegate_submit(PDECODE_UNIT decodeUnit) {
         vdec_temp_stats.submittedFrames++;
         return DR_OK;
     } else if (result == SS4S_VIDEO_FEED_REQUEST_KEYFRAME) {
+        if (vdec_throttle_idr_requests) {
+            unsigned long now = SDL_GetTicks();
+            if (now - last_idr_request_ms < VDEC_IDR_REQUEST_MIN_INTERVAL_MS) {
+                return DR_OK;
+            }
+            last_idr_request_ms = now;
+        }
         return DR_NEED_IDR;
     } else {
         commons_log_error("Session", "Video feed error %d", result);

@@ -38,11 +38,11 @@ app_t *global = NULL;
 int app_init(app_t *app, app_settings_loader *settings_loader, int argc, char *argv[]) {
     assert(settings_loader != NULL);
     memset(app, 0, sizeof(*app));
-    commons_logging_init("moonlight");
+    commons_logging_init("aurora");
     SDL_LogSetOutputFunction(commons_sdl_log, NULL);
     SDL_SetAssertionHandler(app_assertion_handler_abort, NULL);
     SDL_Init(0);
-    commons_log_info("APP", "Start Moonlight. Version %s", APP_VERSION);
+    commons_log_info("APP", "Start Aurora. Version %s", APP_VERSION);
     settings_loader(&app->settings);
     app->main_thread_id = SDL_ThreadID();
     app->running = true;
@@ -277,7 +277,7 @@ void app_process_events(app_t *app) {
 
 void app_quit_confirm() {
     static const char *btn_txts[] = {translatable("Cancel"), translatable("OK"), ""};
-    lv_obj_t *mbox = lv_msgbox_create_i18n(NULL, NULL, locstr("Quit Moonlight?"), btn_txts, false);
+    lv_obj_t *mbox = lv_msgbox_create_i18n(NULL, NULL, locstr("Quit Aurora?"), btn_txts, false);
     lv_obj_add_event_cb(mbox, quit_confirm_cb, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_center(mbox);
 }
@@ -342,7 +342,7 @@ static void libs_init(app_t *app, int argc, char *argv[]) {
 
 
 #if FEATURE_INPUT_LIBCEC
-    cec_sdl_init(&app->cec, "Moonlight");
+    cec_sdl_init(&app->cec, "Aurora");
 #endif
 }
 

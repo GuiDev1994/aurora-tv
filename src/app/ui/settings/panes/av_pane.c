@@ -26,7 +26,7 @@ static bool module_is_auto(const char *value);
 void update_conflict_hint(app_t *app, lv_obj_t *hint) {
 #if FEATURE_EMBEDDED_SHELL
     if (!app_is_decoder_valid(app) && app_has_embedded(app)) {
-        lv_label_set_text(hint, locstr("Moonlight embedded will pick the suitable decoder automatically"));
+        lv_label_set_text(hint, locstr("Aurora uses moonlight-embedded to select a suitable decoder automatically."));
         lv_obj_clear_flag(hint, LV_OBJ_FLAG_HIDDEN);
         return;
     }

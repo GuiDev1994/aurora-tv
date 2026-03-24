@@ -31,7 +31,7 @@ static int aud_init(int audioConfiguration, const POPUS_MULTISTREAM_CONFIGURATIO
     size_t codecDataLen = 0;
     SS4S_AudioInfo info = {
             .numOfChannels = opusConfig->channelCount,
-            .appName = "Moonlight",
+            .appName = "Aurora",
             .streamName = "Streaming",
             .sampleRate = opusConfig->sampleRate,
             .samplesPerFrame = SAMPLES_PER_FRAME,

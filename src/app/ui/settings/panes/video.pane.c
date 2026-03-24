@@ -104,6 +104,19 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
                               SS4S_ModuleInfoGetName(app->ss4s.selection.video_module));
     }
 
+    lv_obj_t *av1_checkbox = pref_checkbox(view, locstr("Use AV1 when possible"), &app_configuration->av1, false);
+    lv_obj_t *av1_hint = pref_desc_label(view, NULL, false);
+    if (app->ss4s.video_cap.codecs & SS4S_VIDEO_AV1) {
+        lv_obj_clear_state(av1_checkbox, LV_STATE_DISABLED);
+        lv_label_set_text(av1_hint,
+                          locstr("AV1 can improve quality at lower bitrates (Sunshine + capable host GPU). HDR uses "
+                                 "Main10 when the decoder supports it."));
+    } else {
+        lv_obj_add_state(av1_checkbox, LV_STATE_DISABLED);
+        lv_label_set_text_fmt(av1_hint, locstr("%s decoder doesn't support AV1 codec."),
+                              SS4S_ModuleInfoGetName(app->ss4s.selection.video_module));
+    }
+
     lv_obj_t *hdr_checkbox = pref_checkbox(view, locstr("HDR"), &app_configuration->hdr, false);
     lv_obj_t *hdr_hint = pref_desc_label(view, NULL, false);
     controller->hdr_checkbox = hdr_checkbox;
@@ -117,6 +130,7 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
 
     lv_obj_add_event_cb(vdec_dropdown, module_changed_cb, LV_EVENT_VALUE_CHANGED, controller);
     lv_obj_add_event_cb(hevc_checkbox, hdr_state_update_cb, LV_EVENT_VALUE_CHANGED, controller);
+    lv_obj_add_event_cb(av1_checkbox, module_changed_cb, LV_EVENT_VALUE_CHANGED, controller);
     lv_obj_add_event_cb(hdr_checkbox, hdr_state_update_cb, LV_EVENT_VALUE_CHANGED, controller);
     lv_obj_add_event_cb(hdr_more, hdr_more_click_cb, LV_EVENT_CLICKED, NULL);
 
