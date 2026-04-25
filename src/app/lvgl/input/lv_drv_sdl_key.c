@@ -94,7 +94,7 @@ static void sdl_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
             }
         }
         data->continue_reading = true;
-    } else if (SDL_PeepEvents(&e, 1, SDL_GETEVENT, SDL_CONTROLLERAXISMOTION, SDL_CONTROLLERBUTTONUP) > 0) {
+    } else if (SDL_PeepEvents(&e, 1, SDL_GETEVENT, SDL_CONTROLLERAXISMOTION, SDL_CONTROLLERDEVICEREMAPPED) > 0) {
         bool handled_soft_kbd = false;
         if (streaming_soft_keyboard_shown() && app->session != NULL
             && (e.type == SDL_CONTROLLERBUTTONDOWN || e.type == SDL_CONTROLLERBUTTONUP)) {
