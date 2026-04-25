@@ -21,6 +21,7 @@ void app_input_handle_event(app_input_t *input, const SDL_Event *event) {
         commons_log_debug("Input", "SDL_CONTROLLERDEVICEADDED");
     } else if (event->type == SDL_CONTROLLERDEVICEREMOVED) {
         commons_log_debug("Input", "SDL_CONTROLLERDEVICEREMOVED");
+        app_input_close_gamepad(input, event->cdevice.which);
     } else if (event->type == SDL_CONTROLLERDEVICEREMAPPED) {
         commons_log_debug("Input", "SDL_CONTROLLERDEVICEREMAPPED");
     } else if (event->type == SDL_USEREVENT) {

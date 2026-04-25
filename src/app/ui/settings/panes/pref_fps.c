@@ -4,6 +4,8 @@
 
 #include "util/i18n.h"
 
+#include <stdlib.h>
+
 static bool is_valid_fps(int fps) {
     return fps > 0;
 }
@@ -14,22 +16,18 @@ static void dropdown_delete_cb(lv_event_t *e);
 
 static void cus_fps_dialog_cb(lv_event_t *e);
 
-static void cus_slider_change_cb(lv_event_t *e);
-
-static void cus_slider_key_cb(lv_event_t *e);
-
 typedef struct pref_dropdown_fps_ctx {
     lv_obj_t *dropdown;
     pref_dropdown_int_entry_t *entries;
     int num_entries;
     int *value_ref;
+    int *refresh_rate_x100_ref;
     char custom_fps_text[32];
     uint16_t selected_index;
     bool cus_value_set;
-    int cus_slider_value;
 } pref_dropdown_fps_ctx_t;
 
-lv_obj_t *pref_dropdown_fps(lv_obj_t *parent, const int *options, int max, int *value) {
+lv_obj_t *pref_dropdown_fps(lv_obj_t *parent, const int *options, int max, int *value, int *refresh_rate_x100) {
     if (max <= 0) {
         max = 60; // Default max FPS if not specified
     }
@@ -79,11 +77,17 @@ lv_obj_t *pref_dropdown_fps(lv_obj_t *parent, const int *options, int max, int *
     ctx->entries = entries;
     ctx->num_entries = num_entries;
     ctx->value_ref = value;
+    ctx->refresh_rate_x100_ref = refresh_rate_x100;
     ctx->dropdown = fps_dropdown;
     ctx->selected_index = lv_dropdown_get_selected(fps_dropdown);
 
-    if (has_custom_fps) {
-        snprintf(ctx->custom_fps_text, sizeof(ctx->custom_fps_text), locstr("%d FPS (Custom)"), *value);
+    if (has_custom_fps || (refresh_rate_x100 != NULL && *refresh_rate_x100 > 0)) {
+        if (refresh_rate_x100 != NULL && *refresh_rate_x100 > 0) {
+            snprintf(ctx->custom_fps_text, sizeof(ctx->custom_fps_text), locstr("%.2f FPS (Custom)"),
+                     *refresh_rate_x100 / 100.0);
+        } else {
+            snprintf(ctx->custom_fps_text, sizeof(ctx->custom_fps_text), locstr("%d FPS (Custom)"), *value);
+        }
         lv_dropdown_set_text(fps_dropdown, ctx->custom_fps_text);
     }
 
@@ -97,13 +101,21 @@ void dropdown_fps_select_cb(lv_event_t *e) {
     pref_dropdown_fps_ctx_t *ctx = (pref_dropdown_fps_ctx_t *) lv_event_get_user_data(e);
     uint16_t index = lv_dropdown_get_selected(lv_event_get_current_target(e));
     if (ctx->cus_value_set) {
-        snprintf(ctx->custom_fps_text, sizeof(ctx->custom_fps_text), locstr("%d FPS (Custom)"), *ctx->value_ref);
+        if (ctx->refresh_rate_x100_ref != NULL && *ctx->refresh_rate_x100_ref > 0) {
+            snprintf(ctx->custom_fps_text, sizeof(ctx->custom_fps_text), locstr("%.2f FPS (Custom)"),
+                     *ctx->refresh_rate_x100_ref / 100.0);
+        } else {
+            snprintf(ctx->custom_fps_text, sizeof(ctx->custom_fps_text), locstr("%d FPS (Custom)"), *ctx->value_ref);
+        }
         lv_dropdown_set_text(ctx->dropdown, ctx->custom_fps_text);
         ctx->cus_value_set = false;
         return;
     }
     lv_dropdown_set_text(ctx->dropdown, NULL);
     if (index != ctx->num_entries - 1) {
+        if (ctx->refresh_rate_x100_ref != NULL) {
+            *ctx->refresh_rate_x100_ref = 0;
+        }
         // Set the value directly if it's not the custom FPS option
         return;
     }
@@ -117,40 +129,29 @@ void dropdown_fps_select_cb(lv_event_t *e) {
     lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(content, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    lv_obj_t *row = lv_obj_create(content);
-    lv_obj_remove_style_all(row);
-    lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_ver(row, LV_DPX(10), 0);
-
     int min_fps = 30;
     int max_fps = ctx->entries[ctx->num_entries - 2].value;
 
-    lv_obj_t *min_label = lv_label_create(row);
-    lv_label_set_text_fmt(min_label, "%d", min_fps);
-    lv_obj_set_style_text_align(min_label, LV_TEXT_ALIGN_LEFT, 0);
-    lv_obj_set_style_min_width(min_label, LV_DPX(40), 0);
+    lv_obj_t *hint = lv_label_create(content);
+    lv_label_set_text_fmt(hint, locstr("Enter a custom framerate (%d-%d FPS):"), min_fps, max_fps);
+    lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(hint, LV_PCT(100));
 
-    ctx->cus_slider_value = *ctx->value_ref;
-    lv_obj_t *slider = pref_slider(row, &ctx->cus_slider_value, min_fps, max_fps, 5);
-    lv_obj_set_user_data(slider, ctx);
-    lv_obj_set_width(slider, LV_PCT(100));
-    lv_obj_set_flex_grow(slider, 1);
-    lv_obj_add_event_cb(slider, cus_slider_key_cb, LV_EVENT_KEY, ctx);
+    lv_obj_t *ta = lv_textarea_create(content);
+    lv_textarea_set_one_line(ta, true);
+    lv_textarea_set_accepted_chars(ta, "0123456789.");
+    lv_textarea_set_max_length(ta, 10);
+    char value[24];
+    if (ctx->refresh_rate_x100_ref != NULL && *ctx->refresh_rate_x100_ref > 0) {
+        snprintf(value, sizeof(value), "%.2f", *ctx->refresh_rate_x100_ref / 100.0);
+    } else {
+        snprintf(value, sizeof(value), "%d", *ctx->value_ref);
+    }
+    lv_textarea_set_text(ta, value);
+    lv_obj_set_user_data(ta, ctx);
+    lv_obj_set_width(ta, LV_PCT(100));
 
-    lv_obj_t *max_label = lv_label_create(row);
-    lv_label_set_text_fmt(max_label, "%d", max_fps);
-    lv_obj_set_style_text_align(max_label, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_set_style_min_width(max_label, LV_DPX(40), 0);
-
-    lv_obj_t *fps_label = lv_label_create(content);
-    lv_label_set_text_fmt(fps_label, locstr("%d FPS"), *ctx->value_ref);
-    lv_obj_set_style_text_align(fps_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_user_data(fps_label, ctx);
-
-    lv_obj_add_event_cb(slider, cus_slider_change_cb, LV_EVENT_VALUE_CHANGED, fps_label);
-
-    lv_obj_add_event_cb(msgbox, cus_fps_dialog_cb, LV_EVENT_VALUE_CHANGED, slider);
+    lv_obj_add_event_cb(msgbox, cus_fps_dialog_cb, LV_EVENT_VALUE_CHANGED, ta);
 
     lv_obj_center(msgbox);
 }
@@ -173,23 +174,26 @@ static void cus_fps_dialog_cb(lv_event_t *e) {
         return;
     }
 
-    *ctx->value_ref = ctx->cus_slider_value;
+    lv_obj_t *ta = lv_event_get_user_data(e);
+    const char *text = lv_textarea_get_text(ta);
+    char *end = NULL;
+    double fps = strtod(text, &end);
+    int min_fps = 30;
+    int max_fps = ctx->entries[ctx->num_entries - 2].value;
+    if (fps < min_fps) {
+        fps = min_fps;
+    }
+    if (fps > max_fps) {
+        fps = max_fps;
+    }
+    int x100 = (int) (fps * 100.0 + 0.5);
+    int rounded_fps = (int) (fps + 0.5);
+    *ctx->value_ref = rounded_fps;
+    if (ctx->refresh_rate_x100_ref != NULL) {
+        *ctx->refresh_rate_x100_ref = x100;
+    }
     ctx->cus_value_set = true;
     lv_event_send(ctx->dropdown, LV_EVENT_VALUE_CHANGED, NULL);
     lv_msgbox_close_async(mbox);
 }
 
-static void cus_slider_change_cb(lv_event_t *e) {
-    lv_obj_t *slider = lv_event_get_current_target(e);
-    pref_dropdown_fps_ctx_t *ctx = (pref_dropdown_fps_ctx_t *) lv_obj_get_user_data(slider);
-    lv_obj_t *fps_label = lv_event_get_user_data(e);
-    lv_label_set_text_fmt(fps_label, locstr("%d FPS"), ctx->cus_slider_value);
-}
-
-static void cus_slider_key_cb(lv_event_t *e) {
-    if (lv_event_get_key(e) != LV_KEY_DOWN) {
-        return;
-    }
-    lv_group_t *group = lv_obj_get_group(lv_event_get_target(e));
-    lv_group_focus_next(group);
-}

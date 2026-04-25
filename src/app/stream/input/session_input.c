@@ -25,6 +25,10 @@ void session_input_init(stream_input_t *input, session_t *session, app_input_t *
                         const session_config_t *config) {
     input->session = session;
     input->input = app_input;
+    input->announcedGamepadMask = 0;
+    input->remoteOkPressed = false;
+    input->remoteOkPressedAt = 0;
+    input->remoteOkModifiers = 0;
     input->view_only = config->view_only;
     input->stick_deadzone = config->stick_deadzone;
     input->no_sdl_mouse = config->hardware_mouse;
@@ -66,6 +70,10 @@ void session_input_started(stream_input_t *input) {
 
 void session_input_stopped(stream_input_t *input) {
     input->started = false;
+    input->announcedGamepadMask = 0;
+    input->remoteOkPressed = false;
+    input->remoteOkPressedAt = 0;
+    input->remoteOkModifiers = 0;
 }
 
 void session_input_screen_keyboard_opened(stream_input_t *input) {

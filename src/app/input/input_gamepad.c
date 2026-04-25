@@ -4,6 +4,8 @@
 #include <SDL_version.h>
 #include <Limelight.h>
 #include <assert.h>
+#include <ctype.h>
+#include <string.h>
 
 #include "logging.h"
 #include "app_input.h"
@@ -13,6 +15,12 @@ static int new_gamepad_state_index(app_input_t *input, SDL_GameController *contr
 static short next_gamepad_gs_id(app_input_t *input);
 
 static bool is_same_gamepad(const app_gamepad_state_t *state, SDL_GameController *controller);
+
+#ifdef TARGET_WEBOS
+static bool str_contains_ci(const char *haystack, const char *needle);
+static bool webos_name_is_non_gamepad(const char *name);
+static bool webos_should_ignore_controller_like_device(const char *name, const char *guidstr, SDL_Joystick *joystick);
+#endif
 
 bool app_input_init_gamepad(app_input_t *input, int device_index) {
     SDL_JoystickGUID guid = SDL_JoystickGetDeviceGUID(device_index);
@@ -26,6 +34,13 @@ bool app_input_init_gamepad(app_input_t *input, int device_index) {
                               SDL_GetError());
             return false;
         }
+        SDL_Joystick *joystick = SDL_GameControllerGetJoystick(controller);
+#ifdef TARGET_WEBOS
+        if (webos_should_ignore_controller_like_device(name, guidstr, joystick)) {
+            SDL_GameControllerClose(controller);
+            return false;
+        }
+#endif
 
         app_gamepad_state_t *state = app_input_gamepad_state_init(input, controller);
         if (state == NULL) {
@@ -274,3 +289,58 @@ static bool is_same_gamepad(const app_gamepad_state_t *state, SDL_GameController
     return false;
 #endif
 }
+
+#ifdef TARGET_WEBOS
+
+static bool str_contains_ci(const char *haystack, const char *needle) {
+    if (haystack == NULL || needle == NULL || *needle == '\0') {
+        return false;
+    }
+    size_t needle_len = strlen(needle);
+    for (const char *cur = haystack; *cur != '\0'; cur++) {
+        size_t i = 0;
+        while (i < needle_len && cur[i] != '\0' &&
+               tolower((unsigned char) cur[i]) == tolower((unsigned char) needle[i])) {
+            i++;
+        }
+        if (i == needle_len) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool webos_name_is_non_gamepad(const char *name) {
+    return str_contains_ci(name, "remote") ||
+           str_contains_ci(name, "keyboard") ||
+           str_contains_ci(name, "mouse") ||
+           str_contains_ci(name, "pointer") ||
+           str_contains_ci(name, "touch") ||
+           str_contains_ci(name, "air mouse") ||
+           str_contains_ci(name, "webos") ||
+           str_contains_ci(name, "lge") ||
+           str_contains_ci(name, "lg electronics");
+}
+
+static bool webos_should_ignore_controller_like_device(const char *name, const char *guidstr, SDL_Joystick *joystick) {
+    const char *display_name = name != NULL ? name : "Unknown";
+    int axes = SDL_JoystickNumAxes(joystick);
+    int buttons = SDL_JoystickNumButtons(joystick);
+    int hats = SDL_JoystickNumHats(joystick);
+    commons_log_info("Input", "Controller-like device candidate: %s. GUID: %s, axes: %d, buttons: %d, hats: %d",
+                     display_name, guidstr, axes, buttons, hats);
+    if (webos_name_is_non_gamepad(name)) {
+        commons_log_info("Input", "Ignoring non-gamepad webOS input device by name: %s. GUID: %s", display_name,
+                         guidstr);
+        return true;
+    }
+    if (axes < 4 || buttons < 8) {
+        commons_log_info("Input",
+                         "Ignoring controller-like device with weak gamepad shape: %s. GUID: %s, axes: %d, buttons: %d, hats: %d",
+                         display_name, guidstr, axes, buttons, hats);
+        return true;
+    }
+    return false;
+}
+
+#endif

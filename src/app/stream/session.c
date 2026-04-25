@@ -283,6 +283,9 @@ void session_config_init(app_t *app, session_config_t *config, const SERVER_DATA
     SS4S_VideoCapabilities video_cap = app->ss4s.video_cap;
     SS4S_AudioCapabilities audio_cap = app->ss4s.audio_cap;
 
+    if (app_config->client_refresh_rate_x100 > 0) {
+        config->stream.fps = (app_config->client_refresh_rate_x100 + 50) / 100;
+    }
     if (config->stream.bitrate < 0) {
         config->stream.bitrate = settings_optimal_bitrate(&video_cap, config->stream.width, config->stream.height,
                                                           config->stream.fps);

@@ -54,6 +54,8 @@ static void on_refresh_rate_plus(lv_event_t *e);
 
 static void refresh_rate_sync_ta(lv_obj_t *ta);
 
+static void sync_custom_fps_to_refresh_rate(basic_pane_t *pane);
+
 const lv_fragment_class_t settings_pane_basic_cls = {
     .constructor_cb = pane_ctor,
     .destructor_cb = pane_dtor,
@@ -116,7 +118,8 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     }
 #endif
     const static int fps_options[] = {30, 60, 90, 120, 144, 240, 0};
-    lv_obj_t *fps_dropdown = pref_dropdown_fps(view, fps_options, (int) max_fps, &app_configuration->stream.fps);
+    lv_obj_t *fps_dropdown = pref_dropdown_fps(view, fps_options, (int) max_fps, &app_configuration->stream.fps,
+                                               &app_configuration->client_refresh_rate_x100);
     lv_obj_set_flex_grow(fps_dropdown, 1);
     lv_obj_add_event_cb(fps_dropdown, on_res_fps_updated, LV_EVENT_VALUE_CHANGED, self);
 
@@ -225,6 +228,7 @@ static void on_bitrate_changed(lv_event_t *e) {
 static void on_res_fps_updated(lv_event_t *e) {
     basic_pane_t *pane = lv_event_get_user_data(e);
     pane->parent->needs_stream_reconnect = true;
+    sync_custom_fps_to_refresh_rate(pane);
     int bitrate = settings_optimal_bitrate(&pane->parent->app->ss4s.video_cap, app_configuration->stream.width,
                                            app_configuration->stream.height, app_configuration->stream.fps);
     if (bitrate > app_configuration->stream.bitrate) {
@@ -272,6 +276,25 @@ static void refresh_rate_sync_ta(lv_obj_t *ta) {
     } else {
         lv_textarea_set_text(ta, "");
     }
+}
+
+static void sync_custom_fps_to_refresh_rate(basic_pane_t *pane) {
+    if (pane->refresh_rate_ta == NULL || app_configuration->client_refresh_rate_x100 > 0) {
+        return;
+    }
+    int fps = app_configuration->stream.fps;
+    if (fps == 30 || fps == 60 || fps == 90 || fps == 120 || fps == 144 || fps == 240) {
+        return;
+    }
+    int x100 = fps * 100;
+    if (x100 < 2300) {
+        x100 = 2300;
+    }
+    if (x100 > 24000) {
+        x100 = 24000;
+    }
+    app_configuration->client_refresh_rate_x100 = x100;
+    refresh_rate_sync_ta(pane->refresh_rate_ta);
 }
 
 static void refresh_rate_parse_and_store(lv_obj_t *ta, basic_pane_t *pane) {

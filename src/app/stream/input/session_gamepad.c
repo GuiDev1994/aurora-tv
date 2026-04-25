@@ -28,6 +28,10 @@ static bool vmouse_intercepted(stream_input_t *input, const app_gamepad_state_t 
 
 static bool filter_deadzone_2axis(stream_input_t *input, short *x, short *y);
 
+static void stream_input_send_gamepad_remove(stream_input_t *input, app_gamepad_state_t *gamepad);
+
+static void stream_input_send_unannounced_gamepads(stream_input_t *input);
+
 void stream_input_handle_cbutton(stream_input_t *input, const SDL_ControllerButtonEvent *event) {
     app_gamepad_state_t *gamepad = app_input_gamepad_state_by_instance_id(input->input, event->which);
     if (gamepad == NULL) {
@@ -264,6 +268,9 @@ void stream_input_handle_ctouchpad(stream_input_t *input, const SDL_ControllerTo
 }
 
 void stream_input_handle_cdevice(stream_input_t *input, const SDL_ControllerDeviceEvent *event) {
+    if (event->type != SDL_CONTROLLERDEVICEREMOVED) {
+        return;
+    }
     app_gamepad_state_t *gamepad = app_input_gamepad_state_by_instance_id(input->input, event->which);
     if (gamepad == NULL) {
         return;
@@ -271,10 +278,40 @@ void stream_input_handle_cdevice(stream_input_t *input, const SDL_ControllerDevi
     if (input->view_only) {
         return;
     }
-    stream_input_send_gamepad_arrive(input, gamepad);
+    stream_input_send_gamepad_remove(input, gamepad);
 }
 
-void stream_input_send_gamepad_arrive(const stream_input_t *input, app_gamepad_state_t *gamepad) {
+void stream_input_handle_jdevice(stream_input_t *input, const SDL_JoyDeviceEvent *event) {
+    app_gamepad_state_t *gamepad = NULL;
+    if (event->type == SDL_JOYDEVICEADDED) {
+#if SDL_VERSION_ATLEAST(2, 0, 6)
+        SDL_JoystickID instance_id = SDL_JoystickGetDeviceInstanceID(event->which);
+        if (instance_id < 0) {
+            stream_input_send_unannounced_gamepads(input);
+            return;
+        }
+        gamepad = app_input_gamepad_state_by_instance_id(input->input, instance_id);
+        if (gamepad == NULL || input->view_only) {
+            return;
+        }
+        stream_input_send_gamepad_arrive(input, gamepad);
+#else
+        stream_input_send_unannounced_gamepads(input);
+#endif
+    } else if (event->type == SDL_JOYDEVICEREMOVED) {
+        gamepad = app_input_gamepad_state_by_instance_id(input->input, event->which);
+        if (gamepad == NULL || input->view_only) {
+            return;
+        }
+        stream_input_send_gamepad_remove(input, gamepad);
+    }
+}
+
+void stream_input_send_gamepad_arrive(stream_input_t *input, app_gamepad_state_t *gamepad) {
+    if (input->announcedGamepadMask & (1 << gamepad->gs_id)) {
+        return;
+    }
+    input->announcedGamepadMask |= 1 << gamepad->gs_id;
     uint8_t type = LI_CTYPE_XBOX;
     uint16_t capabilities = LI_CCAP_ANALOG_TRIGGERS;
     commons_log_info("Input", "Controller %d arrived. Name: %s", gamepad->gs_id,
@@ -335,6 +372,29 @@ void stream_input_send_gamepad_arrive(const stream_input_t *input, app_gamepad_s
     }
 #endif
     LiSendControllerArrivalEvent(gamepad->gs_id, input->input->activeGamepadMask, type, 0xFFFFFFFF, capabilities);
+}
+
+static void stream_input_send_gamepad_remove(stream_input_t *input, app_gamepad_state_t *gamepad) {
+    if ((input->announcedGamepadMask & (1 << gamepad->gs_id)) == 0) {
+        return;
+    }
+    input->announcedGamepadMask &= ~(1 << gamepad->gs_id);
+    short activeGamepadMask = input->input->activeGamepadMask & ~(1 << gamepad->gs_id);
+    commons_log_info("Input", "Controller %d removed", gamepad->gs_id);
+    LiSendMultiControllerEvent(gamepad->gs_id, activeGamepadMask, 0, 0, 0, 0, 0, 0, 0);
+}
+
+static void stream_input_send_unannounced_gamepads(stream_input_t *input) {
+    if (input->view_only) {
+        return;
+    }
+    for (int i = 0, j = app_input_get_max_gamepads(input->input); i < j; ++i) {
+        app_gamepad_state_t *gamepad = app_input_gamepad_state_by_index(input->input, i);
+        if (gamepad == NULL) {
+            continue;
+        }
+        stream_input_send_gamepad_arrive(input, gamepad);
+    }
 }
 
 static void release_buttons(stream_input_t *input, app_gamepad_state_t *gamepad) {

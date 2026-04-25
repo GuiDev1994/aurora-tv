@@ -64,6 +64,8 @@ static struct KeysDown *_pressed_keys;
 
 static int keydown_count = 0;
 
+#define REMOTE_OK_RIGHT_CLICK_HOLD_MS 600
+
 #if TARGET_WEBOS
 
 bool stream_input_webos_intercept_remote_keys(stream_input_t *input, const SDL_KeyboardEvent *event, short *keyCode);
@@ -77,6 +79,53 @@ static int keys_code_comparator(struct KeysDown *p, const void *fv) {
 static bool isSystemKeyCaptureActive() {
     return app_configuration->syskey_capture;
 }
+
+#if TARGET_WEBOS
+
+static bool is_webos_remote_ok_key(const SDL_KeyboardEvent *event) {
+    return event->keysym.sym == SDLK_RETURN || event->keysym.sym == SDLK_KP_ENTER ||
+           event->keysym.scancode == SDL_SCANCODE_RETURN || event->keysym.scancode == SDL_SCANCODE_KP_ENTER;
+}
+
+static bool stream_input_handle_remote_ok_long_press(stream_input_t *input, const SDL_KeyboardEvent *event,
+                                                     char modifiers) {
+    if (!is_webos_remote_ok_key(event)) {
+        return false;
+    }
+    if (event->repeat) {
+        return true;
+    }
+    if (event->state == SDL_PRESSED) {
+        input->remoteOkPressed = true;
+        input->remoteOkPressedAt = event->timestamp != 0 ? event->timestamp : SDL_GetTicks();
+        input->remoteOkModifiers = modifiers;
+        return true;
+    }
+    if (event->state != SDL_RELEASED || !input->remoteOkPressed) {
+        return false;
+    }
+
+    uint32_t releasedAt = event->timestamp != 0 ? event->timestamp : SDL_GetTicks();
+    uint32_t heldMs = releasedAt - input->remoteOkPressedAt;
+    char downModifiers = input->remoteOkModifiers;
+    input->remoteOkPressed = false;
+    input->remoteOkPressedAt = 0;
+    input->remoteOkModifiers = 0;
+
+    if (input->view_only) {
+        return true;
+    }
+    if (heldMs >= REMOTE_OK_RIGHT_CLICK_HOLD_MS) {
+        LiSendMouseButtonEvent(BUTTON_ACTION_PRESS, BUTTON_RIGHT);
+        LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_RIGHT);
+    } else {
+        LiSendKeyboardEvent(0x8000 | VK_RETURN, KEY_ACTION_DOWN, downModifiers);
+        LiSendKeyboardEvent(0x8000 | VK_RETURN, KEY_ACTION_UP, downModifiers);
+    }
+    return true;
+}
+
+#endif
 
 void performPendingSpecialKeyCombo(stream_input_t *input) {
     // The caller must ensure all keys are up
@@ -196,6 +245,12 @@ void stream_input_handle_key(stream_input_t *input, const SDL_KeyboardEvent *eve
             modifiers |= MODIFIER_META;
         }
     }
+
+#if TARGET_WEBOS
+    if (stream_input_handle_remote_ok_long_press(input, event, modifiers)) {
+        return;
+    }
+#endif
 
     // Set keycode. We explicitly use scancode here because GFE will try to correct
     // for AZERTY layouts on the host, but it depends on receiving VK_ values matching

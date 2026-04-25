@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-apt-get update -qq && apt-get install -y -qq cmake gawk curl git build-essential ca-certificates wget > /dev/null
+apt-get update -qq && apt-get install -y -qq cmake gawk curl git build-essential ca-certificates wget file > /dev/null
 
 # Instalar ares-package (necessario para gerar o IPK webOS)
 echo "Instalando ares-package..."
@@ -12,6 +12,7 @@ which ares-package || { echo "Erro: ares-package nao instalado"; exit 1; }
 
 cd /build
 git submodule update --init --recursive
+rm -rf build/webos-easy_build
 
 # Download SDK
 cd /tmp

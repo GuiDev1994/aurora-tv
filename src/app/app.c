@@ -214,10 +214,16 @@ static int app_event_filter(void *userdata, SDL_Event *event) {
             app_request_exit();
             break;
         }
-        case SDL_JOYDEVICEADDED:
         case SDL_JOYDEVICEREMOVED:
+        case SDL_CONTROLLERDEVICEREMOVED: {
+            if (app->session != NULL) {
+                session_handle_input_event(app->session, event);
+            }
+            app_input_handle_event(&app->input, event);
+            return 0;
+        }
+        case SDL_JOYDEVICEADDED:
         case SDL_CONTROLLERDEVICEADDED:
-        case SDL_CONTROLLERDEVICEREMOVED:
         case SDL_CONTROLLERDEVICEREMAPPED: {
             app_input_handle_event(&app->input, event);
             if (app->session != NULL) {
