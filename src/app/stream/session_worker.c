@@ -7,6 +7,7 @@
 #include "util/user_event.h"
 #include "input/input_gamepad.h"
 #include "stream/connection/session_connection.h"
+#include "stream/audio/microphone_capture.h"
 #include "stream/audio/session_audio.h"
 #include "stream/video/session_video.h"
 #include "app_session.h"
@@ -92,6 +93,21 @@ int session_worker(session_t *session) {
         commons_log_error("Session", "Failed to start connection: Limelight returned %d", startResult);
         goto thread_cleanup;
     }
+
+    if (session->config.stream.enableMic) {
+        if (LiIsMicrophoneStreamActive()) {
+            session->microphone_capture = microphone_capture_create(session->config.microphone_device);
+            if (session->microphone_capture == NULL || !microphone_capture_start(session->microphone_capture)) {
+                commons_log_warn("Session", "Client microphone capture initialization failed after negotiation");
+                microphone_capture_destroy(session->microphone_capture);
+                session->microphone_capture = NULL;
+            }
+        } else {
+            commons_log_info("Session",
+                             "Host did not negotiate microphone streaming; leaving client microphone disabled");
+        }
+    }
+
     session_set_state(session, STREAMING_STREAMING);
     bus_pushevent(USER_STREAM_OPEN, NULL, NULL);
     SDL_LockMutex(session->mutex);
@@ -103,6 +119,8 @@ int session_worker(session_t *session) {
     bus_pushevent(USER_STREAM_CLOSE, NULL, NULL);
 
     session_set_state(session, STREAMING_DISCONNECTING);
+    microphone_capture_destroy(session->microphone_capture);
+    session->microphone_capture = NULL;
     LiStopConnection();
 
     if (session->quitapp) {
@@ -119,6 +137,8 @@ int session_worker(session_t *session) {
     // Don't always reset status as error state should be kept
     session_set_state(session, STREAMING_NONE);
     thread_cleanup:
+    microphone_capture_destroy(session->microphone_capture);
+    session->microphone_capture = NULL;
     session_connection_callbacks_reset(session);
     if (session->player != NULL) {
         SS4S_PlayerClose(session->player);

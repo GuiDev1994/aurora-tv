@@ -60,6 +60,7 @@ typedef struct session_config_t {
     bool sops;
     bool view_only;
     bool local_audio;
+    char *microphone_device;
     bool hardware_mouse;
     bool vmouse;
     uint8_t stick_deadzone;

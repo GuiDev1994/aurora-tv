@@ -33,9 +33,11 @@ typedef struct app_settings_t {
     char *decoder;
     char *audio_backend;
     char *audio_device;
+    char *microphone_device;
     char *language;
     bool sops;
     bool localaudio;
+    bool enable_microphone;
     bool fullscreen;
     window_state_t window_state;
     int rotate;
