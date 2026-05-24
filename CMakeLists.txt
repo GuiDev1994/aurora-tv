@@ -51,6 +51,12 @@ elseif (CMAKE_C_COMPILER_TARGET STREQUAL "armv7a-cros-linux-gnueabi")
     set(TARGET_STEAMLINK ON)
 endif ()
 
+# webOS: CMAKE_C_COMPILER_TARGET may be unset; detect cross gcc by basename (see third_party/ss4s).
+if (NOT TARGET_WEBOS AND NOT TARGET_STEAMLINK AND CC_BASENAME MATCHES "^arm-webos-linux-gnueabi-(gcc|g\\+\\+)$")
+    set(TARGET_WEBOS ON)
+    set(TARGET_WEBOS_ARCH "arm")
+endif ()
+
 option(USE_MBEDTLS "" ON)
 option(USE_WERROR "" OFF)
 

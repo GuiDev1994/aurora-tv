@@ -9,6 +9,7 @@ target_sources(moonlight-lib PRIVATE
         launcher/pair.dialog.c
         launcher/appitem.view.c
         launcher/server.context_menu.c
+        launcher/server.popup.c
         launcher/coverloader.c
         streaming/streaming.view.c
         streaming/streaming.controller.c

@@ -11,7 +11,11 @@
 
 lv_obj_t *settings_win_create(lv_fragment_t *self, lv_obj_t *parent) {
     settings_controller_t *controller = (settings_controller_t *) self;
-    /*Create a window*/
+    /* Embedded under the launcher top bar: second AppBar row + dimmed area (popups per pane). */
+    if (controller->launcher_host) {
+        return settings_launcher_embedded_create(self, parent);
+    }
+    /* Create a window */
     lv_obj_t *win = lv_win_create(parent, LV_DPX(50));
 
     lv_obj_t *header = lv_win_get_header(win);

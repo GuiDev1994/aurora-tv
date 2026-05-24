@@ -24,5 +24,14 @@ tar -xzf arm-webos-linux-gnueabi_sdk-buildroot.tar.gz
 ./arm-webos-linux-gnueabi_sdk-buildroot/relocate-sdk.sh
 
 cd /build
-export TOOLCHAIN_FILE=/tmp/arm-webos-linux-gnueabi_sdk-buildroot/share/buildroot/toolchainfile.cmake
+SDK_ROOT=/tmp/arm-webos-linux-gnueabi_sdk-buildroot
+export TOOLCHAIN_FILE="${SDK_ROOT}/share/buildroot/toolchainfile.cmake"
+if [ ! -f "${TOOLCHAIN_FILE}" ]; then
+  echo "Erro: toolchain nao encontrado: ${TOOLCHAIN_FILE}"
+  exit 1
+fi
+if [ ! -x "${SDK_ROOT}/bin/arm-webos-linux-gnueabi-gcc" ]; then
+  echo "Erro: compilador webOS nao encontrado: ${SDK_ROOT}/bin/arm-webos-linux-gnueabi-gcc"
+  exit 1
+fi
 ./scripts/webos/easy_build.sh -DCMAKE_BUILD_TYPE=Release

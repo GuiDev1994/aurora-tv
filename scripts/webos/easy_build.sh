@@ -27,12 +27,24 @@ if [ -z "${TOOLCHAIN_FILE}" ]; then
   TOOLCHAIN_FILE=/opt/arm-webos-linux-gnueabi_sdk-buildroot/share/buildroot/toolchainfile.cmake
 fi
 
+if [ ! -f "${TOOLCHAIN_FILE}" ]; then
+  echo "Toolchain file not found: ${TOOLCHAIN_FILE}"
+  echo "Set TOOLCHAIN_FILE to share/buildroot/toolchainfile.cmake inside the extracted SDK."
+  exit 1
+fi
+
 echo "Configure project"
 if [ ! -d "${CMAKE_BINARY_DIR}" ]; then
   mkdir -p "${CMAKE_BINARY_DIR}"
 fi
 
 BUILD_OPTIONS="-DBUILD_TESTS=OFF"
+# buildroot-nc4 SDK: avoid CMake staying on host /usr/bin/cc if the toolchain file does not set CC.
+_sdk_root="$(dirname "$(dirname "$(dirname "${TOOLCHAIN_FILE}")")")"
+_webos_gcc="${_sdk_root}/bin/arm-webos-linux-gnueabi-gcc"
+if [ -x "${_webos_gcc}" ]; then
+  BUILD_OPTIONS="${BUILD_OPTIONS} -DCMAKE_C_COMPILER=${_webos_gcc}"
+fi
 
 # shellcheck disable=SC2068,SC2086
 $CMAKE_BIN -B"${CMAKE_BINARY_DIR}" -DCMAKE_TOOLCHAIN_FILE="${TOOLCHAIN_FILE}" $BUILD_OPTIONS $@ || exit 1
