@@ -40,7 +40,10 @@ static int aud_init(int audioConfiguration, const POPUS_MULTISTREAM_CONFIGURATIO
         codec = SS4S_AUDIO_OPUS;
         decoder = NULL;
         buffer = calloc(1024, sizeof(unsigned char));
-        assert(buffer != NULL);
+        if (buffer == NULL) {
+            commons_log_error("Session", "Audio init: failed to allocate codec data buffer");
+            return -1;
+        }
         codecDataLen = opus_head_serialize(opusConfig, buffer);
     } else {
         int rc;
@@ -52,6 +55,12 @@ static int aud_init(int audioConfiguration, const POPUS_MULTISTREAM_CONFIGURATIO
         frame_size = opusConfig->samplesPerFrame;
         unit_size = (int) (opusConfig->channelCount * sizeof(int16_t));
         buffer = calloc(unit_size, frame_size);
+        if (buffer == NULL) {
+            commons_log_error("Session", "Audio init: failed to allocate decode buffer");
+            opus_multistream_decoder_destroy(decoder);
+            decoder = NULL;
+            return -1;
+        }
     }
     audio_stream_info.format = SS4S_AudioCodecName(codec);
     switch (audioConfiguration) {

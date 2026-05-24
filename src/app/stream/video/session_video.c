@@ -22,8 +22,12 @@
 #include <SDL.h>
 #include <assert.h>
 
-/* 2MB decode buffer. Very high-bitrate 4K120 HDR can push large frames; if drops or SMP stalls spike, profile before raising. */
-#define DECODER_BUFFER_SIZE (2048 * 1024)
+// Starting capacity for the decode-unit reassembly buffer. Grows on
+// demand to accommodate larger frames (e.g. 4K IDR frames at high
+// bitrate routinely exceed 2 MB), capped to keep a malformed stream
+// from exhausting memory.
+#define DECODER_BUFFER_INITIAL_SIZE (2 * 1024 * 1024)
+#define DECODER_BUFFER_MAX_SIZE (32 * 1024 * 1024)
 
 /** Slices hint for pipeline decode while later slices still arrive (high bitrate / 120 Hz). */
 #define VDEC_STREAM_SLICES_PER_FRAME 4
@@ -55,6 +59,7 @@ static int vdec_stream_target_fps = 60;
 static session_t *session = NULL;
 static SS4S_Player *player = NULL;
 static unsigned char *buffer = NULL;
+static size_t buffer_size = 0;
 static int lastFrameNumber;
 static unsigned long lastIdrRequestMs = 0;
 static struct VIDEO_STATS vdec_temp_stats;
@@ -126,7 +131,8 @@ int vdec_delegate_setup(int videoFormat, int width, int height, int redrawRate, 
     (void) drFlags;
     session = context;
     player = session->player;
-    buffer = malloc(DECODER_BUFFER_SIZE);
+    buffer_size = DECODER_BUFFER_INITIAL_SIZE;
+    buffer = malloc(buffer_size);
     memset(&vdec_temp_stats, 0, sizeof(vdec_temp_stats));
     memset(&vdec_stream_info, 0, sizeof(vdec_stream_info));
     vdec_stream_format = videoFormat;
@@ -196,13 +202,32 @@ int vdec_delegate_setup(int videoFormat, int width, int height, int redrawRate, 
 void vdec_delegate_cleanup() {
     assert(player != NULL);
     free(buffer);
+    buffer = NULL;
+    buffer_size = 0;
     SS4S_PlayerVideoClose(player);
     session = NULL;
 }
 
 int vdec_delegate_submit(PDECODE_UNIT decodeUnit) {
-    if (decodeUnit->fullLength > DECODER_BUFFER_SIZE) {
-        return 0;
+    if ((size_t) decodeUnit->fullLength > buffer_size) {
+        if ((size_t) decodeUnit->fullLength > DECODER_BUFFER_MAX_SIZE) {
+            commons_log_error("Session", "Decode unit %d bytes exceeds %zu byte cap, dropping",
+                              decodeUnit->fullLength, (size_t) DECODER_BUFFER_MAX_SIZE);
+            return DR_NEED_IDR;
+        }
+        size_t new_size = buffer_size > 0 ? buffer_size : DECODER_BUFFER_INITIAL_SIZE;
+        while (new_size < (size_t) decodeUnit->fullLength) {
+            new_size *= 2;
+        }
+        unsigned char *new_buffer = realloc(buffer, new_size);
+        if (new_buffer == NULL) {
+            commons_log_error("Session", "Failed to grow decode buffer to %zu bytes", new_size);
+            return DR_NEED_IDR;
+        }
+        commons_log_info("Session", "Grew decode buffer %zu -> %zu bytes (frame needed %d)",
+                         buffer_size, new_size, decodeUnit->fullLength);
+        buffer = new_buffer;
+        buffer_size = new_size;
     }
     unsigned long ticksms = SDL_GetTicks();
     if (lastFrameNumber <= 0) {
@@ -230,10 +255,11 @@ int vdec_delegate_submit(PDECODE_UNIT decodeUnit) {
     vdec_temp_stats.totalCaptureLatency += decodeUnit->frameHostProcessingLatency;
     vdec_temp_stats.totalReassemblyTime += decodeUnit->enqueueTimeMs - decodeUnit->receiveTimeMs;
     vdec_stream_info.has_host_latency |= decodeUnit->frameHostProcessingLatency > 0;
-    if (!vdec_warned_near_buffer_limit && decodeUnit->fullLength > (DECODER_BUFFER_SIZE * 9 / 10)) {
+    if (!vdec_warned_near_buffer_limit &&
+        (size_t) decodeUnit->fullLength > (DECODER_BUFFER_INITIAL_SIZE * 9 / 10)) {
         vdec_warned_near_buffer_limit = true;
-        commons_log_warn("Session", "Video frame size %d is near decoder buffer limit (%d)",
-                         decodeUnit->fullLength, DECODER_BUFFER_SIZE);
+        commons_log_warn("Session", "Video frame size %d is near initial decoder buffer (%zu)",
+                         decodeUnit->fullLength, (size_t) DECODER_BUFFER_INITIAL_SIZE);
     }
     size_t length = 0;
     PLENTRY entry = decodeUnit->bufferList;
