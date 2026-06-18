@@ -238,7 +238,11 @@ bool ui_dispatch_userevent(app_t *app, int which, void *data1, void *data2) {
 }
 
 bool ui_should_block_input() {
+#if defined(TARGET_WEBOS)
+    return streaming_overlay_shown() || streaming_soft_keyboard_shown() || streaming_hid_panel_shown();
+#else
     return streaming_overlay_shown() || streaming_soft_keyboard_shown();
+#endif
 }
 
 void ui_display_size(app_ui_t *ui, int width, int height) {

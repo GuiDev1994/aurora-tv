@@ -30,6 +30,7 @@ void session_input_init(stream_input_t *input, session_t *session, app_input_t *
     input->remoteOkPressedAt = 0;
     input->remoteOkModifiers = 0;
     input->view_only = config->view_only;
+    input->hid_passthrough = config->hid_passthrough;
     input->stick_deadzone = config->stick_deadzone;
     input->no_sdl_mouse = config->hardware_mouse;
 #if FEATURE_INPUT_EVMOUSE
@@ -59,6 +60,9 @@ void session_input_interrupt(stream_input_t *input) {
 
 void session_input_started(stream_input_t *input) {
     input->started = true;
+    if (input->hid_passthrough) {
+        return;
+    }
     for (int i = 0, j = app_input_get_max_gamepads(input->input); i < j; ++i) {
         app_gamepad_state_t *gamepad = app_input_gamepad_state_by_index(input->input, i);
         if (gamepad == NULL) {

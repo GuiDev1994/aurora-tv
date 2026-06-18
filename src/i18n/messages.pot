@@ -443,6 +443,16 @@ msgid ""
 "buttons."
 msgstr ""
 
+#: src/app/ui/settings/panes/input.pane.c:72
+msgid "Enable HID Passthrough (Experimental)"
+msgstr ""
+
+#: src/app/ui/settings/panes/input.pane.c:75
+msgid ""
+"Enabling HID Passthrough disables standard Moonlight controller emulation to "
+"prevent duplicate inputs."
+msgstr ""
+
 #: src/app/ui/settings/panes/input.pane.c:81
 msgid "Swap ABXY buttons"
 msgstr ""
@@ -599,6 +609,34 @@ msgstr ""
 
 #: src/app/ui/streaming/streaming.view.c:83
 msgid "Virtual Mouse"
+msgstr ""
+
+#: src/app/ui/streaming/streaming.view.c
+msgid "HID Devices"
+msgstr ""
+
+#: src/app/ui/streaming/hid_passthrough_panel.c
+msgid "No HID gamepads visible to Aurora"
+msgstr ""
+
+#: src/app/ui/streaming/hid_passthrough_panel.c
+msgid "Bridged"
+msgstr ""
+
+#: src/app/ui/streaming/hid_passthrough_panel.c
+msgid "Idle"
+msgstr ""
+
+#: src/app/ui/streaming/hid_passthrough_panel.c
+msgid "Plug out"
+msgstr ""
+
+#: src/app/ui/streaming/hid_passthrough_panel.c
+msgid "Plug in"
+msgstr ""
+
+#: src/app/ui/streaming/hid_passthrough_panel.c
+msgid "Back"
 msgstr ""
 
 #: src/app/ui/streaming/streaming.view.c:96

@@ -447,6 +447,14 @@ msgstr "Mouse virtual"
 msgid "Press LB + RS to move mouse cursor with sticks. LT/RT for left/right mouse buttons."
 msgstr ""
 
+#: src/app/ui/settings/panes/input.pane.c:72
+msgid "Enable HID Passthrough (Experimental)"
+msgstr "Ativar HID Passthrough (Experimental)"
+
+#: src/app/ui/settings/panes/input.pane.c:75
+msgid "Enabling HID Passthrough disables standard Moonlight controller emulation to prevent duplicate inputs."
+msgstr "Ativar HID Passthrough desativa a emulação padrão de controle do Moonlight para evitar entradas duplicadas."
+
 #: src/app/ui/settings/panes/input.pane.c:81
 msgid "Swap ABXY buttons"
 msgstr "Inverter botões ABXY"
@@ -596,6 +604,34 @@ msgstr "Teclado completo"
 #: src/app/ui/streaming/streaming.view.c:83
 msgid "Virtual Mouse"
 msgstr "Mouse virtual"
+
+#: src/app/ui/streaming/streaming.view.c
+msgid "HID Devices"
+msgstr "Dispositivos HID"
+
+#: src/app/ui/streaming/hid_passthrough_panel.c
+msgid "No HID gamepads visible to Aurora"
+msgstr "Nenhum gamepad HID visível para o Aurora"
+
+#: src/app/ui/streaming/hid_passthrough_panel.c
+msgid "Bridged"
+msgstr "Conectado"
+
+#: src/app/ui/streaming/hid_passthrough_panel.c
+msgid "Idle"
+msgstr "Ocioso"
+
+#: src/app/ui/streaming/hid_passthrough_panel.c
+msgid "Plug out"
+msgstr "Desconectar"
+
+#: src/app/ui/streaming/hid_passthrough_panel.c
+msgid "Plug in"
+msgstr "Conectar"
+
+#: src/app/ui/streaming/hid_passthrough_panel.c
+msgid "Back"
+msgstr "Voltar"
 
 #: src/app/ui/streaming/streaming.view.c:96
 msgid "Disconnect"

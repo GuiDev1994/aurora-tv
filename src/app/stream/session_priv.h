@@ -8,6 +8,7 @@
 #include "stream/input/session_input.h"
 #include "stream/session.h"
 #include "embed_wrapper.h"
+#include "hid_passthrough/hid_passthrough_manager.h"
 
 typedef struct app_t app_t;
 
@@ -20,6 +21,7 @@ struct session_t {
     int display_width, display_height;
 
     stream_input_t input;
+    hid_passthrough_manager_t hid_pt;
     /* SERVER_DATA and CONFIGURATION is cloned rather than referenced */
     SERVER_DATA *server;
     int app_id;

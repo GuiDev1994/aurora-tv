@@ -349,11 +349,12 @@ static void pref_dropdown_key_hack_cb(lv_event_t *event) {
         case LV_KEY_RIGHT: {
             if (lv_dropdown_is_open(target)) {
                 state->opened = true;
-                return;
             }
-            lv_event_stop_processing(event);
+            /* When closed, let the event reach settings.controller on_detail_key for focus navigation. */
             return;
         }
+        default:
+            return;
     }
 }
 

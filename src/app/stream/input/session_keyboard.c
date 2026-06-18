@@ -521,6 +521,19 @@ void stream_input_send_key_event(stream_input_t *input, short keyCode, bool keyD
     if (input->view_only) {
         return;
     }
+    if (keyDown) {
+        struct KeysDown *node = keys_new();
+        node->keyCode = keyCode;
+        _pressed_keys = keys_append(_pressed_keys, node);
+        keydown_count++;
+    } else {
+        struct KeysDown *node = keys_find_by(_pressed_keys, &keyCode, &keys_code_comparator);
+        if (node) {
+            _pressed_keys = keys_remove(_pressed_keys, node);
+            free(node);
+            keydown_count--;
+        }
+    }
     LiSendKeyboardEvent(0x8000 | keyCode,
                        keyDown ? KEY_ACTION_DOWN : KEY_ACTION_UP,
                        modifiers);

@@ -75,6 +75,8 @@ void settings_initialize(app_settings_t *config, char *conf_dir) {
     config->show_stats_compact = false;
     config->stick_deadzone = 7;
     config->client_refresh_rate_x100 = 0;
+    config->hid_passthrough = false;
+    config->hid_passthrough_port = 48054;
 
     config->conf_dir = conf_dir;
     config->ini_path = path_join(conf_dir, CONF_NAME_MOONLIGHT);
@@ -121,6 +123,8 @@ bool settings_save(app_settings_t *config) {
     ini_write_bool(fp, "swap_abxy", config->swap_abxy);
     ini_write_int(fp, "stick_deadzone", config->stick_deadzone);
     ini_write_bool(fp, "syskey_capture", config->syskey_capture);
+    ini_write_bool(fp, "hid_passthrough", config->hid_passthrough);
+    ini_write_int(fp, "hid_passthrough_port", config->hid_passthrough_port);
 
     ini_write_section(fp, "video");
     ini_write_string(fp, "decoder", config->decoder);
@@ -272,6 +276,13 @@ static int settings_parse(app_settings_t *config, const char *section, const cha
         config->swap_abxy = INI_IS_TRUE(value);
     } else if (INI_NAME_MATCH("syskey_capture")) {
         config->syskey_capture = INI_IS_TRUE(value);
+    } else if (INI_NAME_MATCH("hid_passthrough")) {
+        config->hid_passthrough = INI_IS_TRUE(value);
+    } else if (INI_NAME_MATCH("hid_passthrough_port")) {
+        set_int(&config->hid_passthrough_port, value);
+        if (config->hid_passthrough_port <= 0 || config->hid_passthrough_port > 65535) {
+            config->hid_passthrough_port = 48054;
+        }
     } else if (INI_FULL_MATCH("video", "decoder")) {
         set_string(&config->decoder, value);
     } else if (INI_FULL_MATCH("audio", "backend")) {

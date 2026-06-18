@@ -40,7 +40,7 @@ static const resolution_pair_t built_in_resolutions[] = {
     {1920, 1080, false, NULL},
     {2560, 1440, false, NULL},
     /* ~90% of 4K; stable on recent LG panels without full-4K input delay */
-    {3456, 1944, false, "3.5K"},
+    {3584, 2016, false, "3.6K"},
     {3840, 2160, false, NULL},
 };
 
@@ -232,6 +232,12 @@ static void dropdown_key_rel_cb(lv_event_t *e) {
     pref_resolution_ctx_t *ctx = lv_event_get_user_data(e);
     lv_obj_t *dropdown = lv_event_get_current_target(e);
     lv_indev_t *indev = lv_indev_get_act();
+    if (indev != NULL) {
+        lv_indev_type_t type = lv_indev_get_type(indev);
+        if (type == LV_INDEV_TYPE_KEYPAD || type == LV_INDEV_TYPE_ENCODER) {
+            return;
+        }
+    }
     if (lv_indev_get_scroll_obj(indev) != NULL) {
         return;
     }

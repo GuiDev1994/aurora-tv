@@ -10,7 +10,8 @@ This guide explains how to enable developer mode on the TV, build Aurora, and in
 2. [Manual installation](#2-manual-installation)
 3. [Build](#3-build)
 4. [Troubleshooting](#4-troubleshooting)
-5. [webOS Homebrew (catalog)](#5-webos-homebrew-catalog)
+5. [HID Passthrough (Experimental)](#5-hid-passthrough-experimental)
+6. [webOS Homebrew (catalog)](#6-webos-homebrew-catalog)
 
 ---
 
@@ -205,6 +206,53 @@ The buildroot-nc4 SDK includes pbnjson_c, PmLogLib, webosi18n, etc. If something
 
 ---
 
-## 5. webOS Homebrew catalog
+## 5. HID Passthrough (Experimental)
+
+HID Passthrough sends raw controller HID reports from the TV to **[CTM-USBIP](https://github.com/CTM-Bridge/CTM-USBIP)** on your PC, so Windows sees the manufacturer's native USB driver instead of a virtual Xbox pad from Sunshine.
+
+### PC setup
+
+1. Install **CTM-Bridge-Setup.exe** from the [CTM-USBIP releases](https://github.com/CTM-Bridge/CTM-USBIP/releases).
+2. The installer registers the `ctm-usbip` Windows service (default control port **48054**) and the usbip-win2 driver.
+3. PC and TV must be on the **same LAN** as the Moonlight stream.
+
+### TV setup
+
+1. Pair your controller to the TV via **webOS Settings** (Bluetooth), not inside Aurora.
+2. In Aurora: **Settings → Input → Enable HID Passthrough (Experimental)**.
+3. Start a stream. During streaming, open the status overlay (BACK / gamepad combo) and choose **HID Devices** (next to Virtual Mouse).
+4. In the device list, tap **Plug in** on each gamepad you want bridged to CTM-USBIP on the PC. Use **Plug out** to stop bridging without unpairing the controller from the TV.
+
+Video, audio, keyboard, and mouse still use Moonlight; **only plugged HID gamepads** are sent to CTM-USBIP.
+
+When HID Passthrough is enabled, Aurora does **not** send Moonlight gamepad events (avoids duplicate controllers on the host).
+
+### Supported controllers
+
+CTM-USBIP maps most devices automatically:
+
+| Controller | Host map | Notes |
+|------------|----------|-------|
+| DualSense / DS4 | Dedicated `.map` files | BT reports translated on the host |
+| Xbox (GIP) | `xbox_gip_*.map` | |
+| Flydigi Apex 4 (`04b4:2412`) | `hid_identity.map` | Composite device; Aurora picks the gamepad HID interface |
+| Gamesir G7 Pro / others | `hid_identity.map` | Generic byte-for-byte passthrough |
+
+No Aurora-side tweaks are needed per brand — if a device fails on the host, add a `.map` in CTM-USBIP, not in Aurora.
+
+### Developer mode / hidraw access
+
+HID capture reads `/dev/hidraw*`. On developer-mode installs this is typically available to the app. If controllers are not detected, verify nodes exist (e.g. with the standalone [ctm-bridge-webos](https://github.com/CTM-Bridge/ctm-bridge-webos) `--enumerate` tool).
+
+Optional INI keys in `moonlight.ini` under `[input]`:
+
+```ini
+hid_passthrough=true
+hid_passthrough_port=48054
+```
+
+---
+
+## 6. webOS Homebrew catalog
 
 To list **Aurora** in the [Homebrew Channel](https://webosbrew.org/) app store ([repo.webosbrew.org](https://repo.webosbrew.org/)), submit a PR to [webosbrew/apps-repo](https://github.com/webosbrew/apps-repo) using [`deploy/webosbrew/com.aurora.gamestream.yml`](../deploy/webosbrew/com.aurora.gamestream.yml) and the checklist in **[WEBOS_HOMEBREW.md](WEBOS_HOMEBREW.md)**.

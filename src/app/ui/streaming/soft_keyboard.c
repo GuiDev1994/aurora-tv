@@ -35,9 +35,13 @@ typedef struct {
     bool toggle_ctrl;
     bool toggle_alt;
     bool toggle_win;
+    uint16_t last_click_btn_id;
+    uint32_t last_click_tick;
     void (*on_close)(void *);
     void *on_close_userdata;
 } soft_kbd_t;
+
+#define KBD_CLICK_DEDUPE_MS 80
 
 /*
  * Button indices inside the single btnmatrix (matches kbd_map order).
@@ -245,6 +249,13 @@ static void on_keyboard_click(lv_event_t *e) {
     if (vk == 0) return;
 
     soft_kbd_t *kbd = kd->kbd;
+    uint32_t now = lv_tick_get();
+    if (btn_id == kbd->last_click_btn_id && (now - kbd->last_click_tick) < KBD_CLICK_DEDUPE_MS) {
+        return;
+    }
+    kbd->last_click_btn_id = btn_id;
+    kbd->last_click_tick = now;
+
     if (vk == VK_SHIFT || vk == VK_RSHIFT) {
         kbd->toggle_shift = !kbd->toggle_shift;
         send_modifier(kbd, vk, kbd->toggle_shift);
@@ -279,11 +290,6 @@ static void on_keyboard_click(lv_event_t *e) {
     send_key(kbd, vk, true);
     send_key(kbd, vk, false);
     release_toggles(kbd);
-    /* Belt-and-suspenders: also force-release every modifier scancode and drain any tracked
-     * physical keys, so combos like Ctrl+Q (RTSS) cannot leave a stuck modifier on the host
-     * that would later poison gamepad navigation in Windows Game Bar / overlays. */
-    force_release_all_modifiers(kbd);
-    stream_input_flush_pressed_keys(kbd->input);
 }
 
 static void kbd_data_delete_cb(lv_event_t *e) {

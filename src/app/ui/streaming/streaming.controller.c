@@ -2,6 +2,7 @@
 #include "app_session.h"
 #include "streaming.controller.h"
 #include "soft_keyboard.h"
+#include "hid_passthrough_panel.h"
 
 #include <SDL.h>
 #include "stream/video/session_video.h"
@@ -23,6 +24,10 @@ static void suspend_streaming(lv_event_t *event);
 static void open_keyboard(lv_event_t *event);
 
 static void toggle_vmouse(lv_event_t *event);
+
+static void open_hid_devices(lv_event_t *event);
+
+static void hid_panel_close_cb(void *userdata);
 
 static void hide_overlay(lv_event_t *event);
 static void hide_overlay_impl(streaming_controller_t *controller);
@@ -154,6 +159,12 @@ bool streaming_overlay_shown() {
 bool streaming_soft_keyboard_shown() {
     return current_controller != NULL && current_controller->soft_kbd != NULL;
 }
+
+#if defined(TARGET_WEBOS)
+bool streaming_hid_panel_shown() {
+    return current_controller != NULL && current_controller->hid_panel != NULL;
+}
+#endif
 
 bool streaming_stats_shown() {
     return overlay_showing || overlay_pinned;
@@ -309,6 +320,12 @@ static void controller_dtor(lv_fragment_t *self) {
         lv_timer_del(fragment->network_test_timer);
         fragment->network_test_timer = NULL;
     }
+#if defined(TARGET_WEBOS)
+    if (fragment->hid_panel) {
+        lv_obj_del(fragment->hid_panel);
+        fragment->hid_panel = NULL;
+    }
+#endif
     streaming_styles_reset(fragment);
     if (current_controller == fragment) {
         current_controller = NULL;
@@ -424,6 +441,11 @@ static void on_view_created(lv_fragment_t *self, lv_obj_t *view) {
     lv_obj_add_event_cb(controller->suspend_btn, suspend_streaming, LV_EVENT_CLICKED, self);
     lv_obj_add_event_cb(controller->kbd_btn, open_keyboard, LV_EVENT_CLICKED, self);
     lv_obj_add_event_cb(controller->vmouse_btn, toggle_vmouse, LV_EVENT_CLICKED, self);
+#if defined(TARGET_WEBOS)
+    if (controller->hid_devices_btn) {
+        lv_obj_add_event_cb(controller->hid_devices_btn, open_hid_devices, LV_EVENT_CLICKED, self);
+    }
+#endif
     lv_obj_add_event_cb(controller->base.obj, hide_overlay, LV_EVENT_CLICKED, self);
     lv_obj_add_event_cb(controller->overlay, overlay_key_cb, LV_EVENT_KEY, controller);
     lv_obj_add_event_cb(controller->base.obj, on_cancel_key, LV_EVENT_CANCEL, controller);
@@ -530,6 +552,40 @@ static void toggle_vmouse(lv_event_t *event) {
     session_toggle_vmouse(app->session);
 }
 
+#if defined(TARGET_WEBOS)
+static void hid_panel_close_cb(void *userdata) {
+    streaming_controller_t *controller = userdata;
+    if (!controller) {
+        return;
+    }
+    if (controller->hid_panel) {
+        lv_obj_del(controller->hid_panel);
+        controller->hid_panel = NULL;
+    }
+    app_input_set_group(&controller->global->ui.input, controller->group);
+}
+
+static void open_hid_devices(lv_event_t *event) {
+    streaming_controller_t *controller = lv_event_get_user_data(event);
+    if (!controller->global->session || controller->hid_panel) {
+        return;
+    }
+    hide_overlay_impl(controller);
+    controller->hid_panel = hid_passthrough_panel_create(
+            lv_layer_top(),
+            controller->global->session,
+            hid_panel_close_cb,
+            controller);
+    if (!controller->hid_panel) {
+        return;
+    }
+    lv_group_t *group = hid_passthrough_panel_get_group(controller->hid_panel);
+    if (group) {
+        app_input_set_group(&controller->global->ui.input, group);
+    }
+}
+#endif
+
 bool show_overlay(streaming_controller_t *controller) {
     if (overlay_showing) {
         return false;
@@ -548,11 +604,15 @@ bool show_overlay(streaming_controller_t *controller) {
     return true;
 }
 
-/* B/Back: close keyboard if shown, else hide overlay */
+/* B/Back: close keyboard or HID panel if shown, else hide overlay */
 static void on_cancel_key(lv_event_t *event) {
     streaming_controller_t *controller = lv_event_get_user_data(event);
     if (streaming_soft_keyboard_shown()) {
         soft_keyboard_close_cb(controller);
+#if defined(TARGET_WEBOS)
+    } else if (streaming_hid_panel_shown()) {
+        hid_panel_close_cb(controller);
+#endif
     } else {
         hide_overlay(event);
     }
@@ -596,6 +656,12 @@ static void update_buttons_layout(streaming_controller_t *controller) {
     lv_area_center(&coords, &controller->button_points[3]);
     lv_obj_get_coords(controller->kbd_btn, &coords);
     lv_area_center(&coords, &controller->button_points[4]);
+#if defined(TARGET_WEBOS)
+    if (controller->hid_devices_btn) {
+        lv_obj_get_coords(controller->hid_devices_btn, &coords);
+        lv_area_center(&coords, &controller->button_points[5]);
+    }
+#endif
     app_input_set_button_points(&controller->global->ui.input, controller->button_points);
 }
 

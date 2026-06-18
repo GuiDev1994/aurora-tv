@@ -7,7 +7,7 @@ Unofficial fork of [Moonlight TV](https://github.com/mariotaku/moonlight-tv) for
 ## Highlights
 
 - **AMOLED layout** — pure black background (`#000000`), dark surfaces, and violet accent; launcher, game grid, and settings popups share the same theme.
-- **3.5K resolution (3456×1944)** — option between 2K and 4K; ~90% of 4K pixel area with less load on the TV decoder and lower input lag than native 4K on recent models.
+- **3.6K resolution (3584×2016)** — option between 2K and 4K; ~90% of 4K pixel area with less load on the TV decoder and lower input lag than native 4K on recent models.
 - **HDR10 (PQ)** over HEVC Main10 or AV1 Main10 (when supported).
 - **Tight display sync** (webOS) — tighter panel sync; see below.
 - Up to **400 Mbps** on the bitrate slider (UI maximum); practical guidance below.
@@ -16,13 +16,13 @@ Unofficial fork of [Moonlight TV](https://github.com/mariotaku/moonlight-tv) for
 
 | Setting | Suggestion |
 |---------|------------|
-| **Resolution** | **3.5K** (3456×1944) — best quality/performance balance for most titles |
+| **Resolution** | **3.6K** (3584×2016) — best quality/performance balance for most titles |
 | **FPS** | 60 or 120 depending on game and network |
 | **Codec** | HEVC (H.265); AV1 if host and decoder expose it |
 | **Bitrate** | **Up to ~270 Mbps** on stable 5 GHz Wi‑Fi — reduces micro-stutters and throughput drops on heavy streams (HDR, 120 Hz). Increase gradually; visual gains above that are usually small |
 | **Tight display sync** | Enable in **Settings → Video → Smooth playback (TV)** after testing; reconnect the stream when changed |
 
-On an unstable network, start at **120–180 Mbps** for 3.5K HDR before going higher.
+On an unstable network, start at **120–180 Mbps** for 3.6K HDR before going higher.
 
 ## Tight display sync (VSync)
 
@@ -45,7 +45,7 @@ From the menu: **Full keyboard**, virtual mouse, suspend, and quit. The compact 
 
 ### Compact mode (single line)
 
-Example: `3456×1944 HDR H.265 FPS 120 N 2/1ms H 4ms S 1ms D 8ms TL 15ms FD 0.00% 245.0 Mbps`
+Example: `3584×2016 HDR H.265 FPS 120 N 2/1ms H 4ms S 1ms D 8ms TL 15ms FD 0.00% 245.0 Mbps`
 
 | Field | Meaning |
 |-------|---------|

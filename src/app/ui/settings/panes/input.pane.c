@@ -11,6 +11,8 @@ typedef struct input_pane_t {
     lv_obj_t *absmouse_toggle;
     lv_obj_t *absmouse_hint;
     lv_obj_t *deadzone_label;
+    lv_obj_t *deadzone_slider;
+    lv_obj_t *swap_abxy_toggle;
 } input_pane_t;
 
 static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *view);
@@ -26,6 +28,10 @@ static void hwmouse_state_update(input_pane_t *pane);
 static void update_deadzone_label(input_pane_t *pane);
 
 static void on_deadzone_changed(lv_event_t *e);
+
+static void on_hid_passthrough_changed(lv_event_t *e);
+
+static void hid_passthrough_ui_update(input_pane_t *pane);
 
 const lv_fragment_class_t settings_pane_input_cls = {
         .constructor_cb = pane_ctor,
@@ -67,24 +73,35 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
 
     pref_header(view, locstr("Gamepad"));
 
+    lv_obj_t *hid_pt_toggle = pref_checkbox(view, locstr("Enable HID Passthrough (Experimental)"),
+                                            &app_configuration->hid_passthrough, false);
+    lv_obj_add_event_cb(hid_pt_toggle, on_hid_passthrough_changed, LV_EVENT_VALUE_CHANGED, pane);
+    pref_desc_label(view,
+                    locstr("Enabling HID Passthrough disables standard Moonlight controller emulation to prevent "
+                           "duplicate inputs."),
+                    false);
+
     pane->deadzone_label = pref_title_label(view, locstr("Analog stick deadzone"));
-    lv_obj_t *deadzone_slider = pref_slider(view, &app_configuration->stick_deadzone, 0, 20, 1);
-    lv_obj_set_width(deadzone_slider, LV_PCT(100));
-    lv_obj_add_event_cb(deadzone_slider, on_deadzone_changed, LV_EVENT_VALUE_CHANGED, pane);
+    pane->deadzone_slider = pref_slider(view, &app_configuration->stick_deadzone, 0, 20, 1);
+    lv_obj_set_width(pane->deadzone_slider, LV_PCT(100));
+    lv_obj_add_event_cb(pane->deadzone_slider, on_deadzone_changed, LV_EVENT_VALUE_CHANGED, pane);
     pref_desc_label(view, locstr("Note: Some games can enforce a larger deadzone "
-                                 "than what Aurora is configured to use."), false);
+                                 "than what Aurora is configured to use."),
+                    false);
 
     pref_checkbox(view, locstr("Virtual mouse"), &app_configuration->virtual_mouse, false);
     pref_desc_label(view, locstr("Press LB + RS to move mouse cursor with sticks. "
-                                 "LT/RT for left/right mouse buttons."), false);
+                                 "LT/RT for left/right mouse buttons."),
+                    false);
 
-    pref_checkbox(view, locstr("Swap ABXY buttons"), &app_configuration->swap_abxy, false);
+    pane->swap_abxy_toggle = pref_checkbox(view, locstr("Swap ABXY buttons"), &app_configuration->swap_abxy, false);
     pref_desc_label(view, locstr("Swap A/B and X/Y gamepad buttons. Useful when you prefer Nintendo-like layouts."),
                     false);
 
 #if FEATURE_INPUT_EVMOUSE
     hwmouse_state_update(pane);
 #endif
+    hid_passthrough_ui_update(pane);
     update_deadzone_label(pane);
     return view;
 }
@@ -115,4 +132,21 @@ static void update_deadzone_label(input_pane_t *pane) {
 static void on_deadzone_changed(lv_event_t *e) {
     input_pane_t *pane = (input_pane_t *) lv_event_get_user_data(e);
     update_deadzone_label(pane);
+}
+
+static void hid_passthrough_ui_update(input_pane_t *pane) {
+    bool disabled = app_configuration->hid_passthrough;
+    if (disabled) {
+        lv_obj_add_state(pane->deadzone_slider, LV_STATE_DISABLED);
+        lv_obj_add_state(pane->deadzone_label, LV_STATE_DISABLED);
+        lv_obj_add_state(pane->swap_abxy_toggle, LV_STATE_DISABLED);
+    } else {
+        lv_obj_clear_state(pane->deadzone_slider, LV_STATE_DISABLED);
+        lv_obj_clear_state(pane->deadzone_label, LV_STATE_DISABLED);
+        lv_obj_clear_state(pane->swap_abxy_toggle, LV_STATE_DISABLED);
+    }
+}
+
+static void on_hid_passthrough_changed(lv_event_t *e) {
+    hid_passthrough_ui_update((input_pane_t *) lv_event_get_user_data(e));
 }

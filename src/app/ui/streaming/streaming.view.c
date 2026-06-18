@@ -89,6 +89,20 @@ lv_obj_t *streaming_scene_create(lv_fragment_t *self, lv_obj_t *parent) {
     lv_obj_add_style(vmouse_label, &controller->overlay_button_label_style, 0);
     lv_label_set_text(vmouse_label, locstr("Virtual Mouse"));
 
+#if defined(TARGET_WEBOS)
+    if (app_configuration->hid_passthrough) {
+        lv_obj_t *hid_btn = lv_btn_create(actions);
+        lv_obj_add_flag(hid_btn, LV_OBJ_FLAG_EVENT_BUBBLE);
+        lv_obj_add_style(hid_btn, &controller->overlay_button_style, 0);
+        lv_obj_add_style(hid_btn, &controller->overlay_button_style_focused, LV_STATE_FOCUS_KEY);
+        lv_obj_set_style_bg_color(hid_btn, lv_palette_main(LV_PALETTE_PURPLE), 0);
+        lv_obj_t *hid_label = lv_label_create(hid_btn);
+        lv_obj_add_style(hid_label, &controller->overlay_button_label_style, 0);
+        lv_label_set_text(hid_label, locstr("HID Devices"));
+        controller->hid_devices_btn = hid_btn;
+    }
+#endif
+
     lv_obj_t *actions_spacing = lv_obj_create(actions);
     lv_obj_remove_style_all(actions_spacing);
     lv_obj_set_flex_grow(actions_spacing, 1);
