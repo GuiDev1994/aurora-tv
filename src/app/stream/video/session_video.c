@@ -9,6 +9,7 @@
 
 #include "stream/session.h"
 
+#include "app_settings.h"
 #include "sps_parser.h"
 
 #include "ui/streaming/streaming.controller.h"
@@ -129,6 +130,13 @@ int vdec_delegate_setup(int videoFormat, int width, int height, int redrawRate, 
     info.height = height;
     info.frameRateNumerator = vdec_stream_target_fps;
     info.frameRateDenominator = 1;
+    if (app_configuration != NULL) {
+        info.tightDisplaySync = app_configuration->video_tight_sync;
+        if (info.tightDisplaySync) {
+            commons_log_info("Session", "Video decoder: tight display sync enabled (%d fps)",
+                             vdec_stream_target_fps);
+        }
+    }
     switch (videoFormat) {
         case VIDEO_FORMAT_H264:
             info.codec = SS4S_VIDEO_H264;
