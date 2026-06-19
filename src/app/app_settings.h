@@ -50,6 +50,7 @@ typedef struct app_settings_t {
     bool hid_passthrough;
     int hid_passthrough_port;
     bool hdr;   /* HDR10 (PQ) over HEVC Main10 or AV1 Main10 when host and decoder support it */
+    bool force_full_color_range; /* SDR only: request full-range YUV (0-255) from host. No effect when HDR is on. */
     /**
      * webOS Starfish: nominal-frame PTS pacing + fixed small negative presentation offset
      * for tighter vsync without adding latency when the stream runs late.

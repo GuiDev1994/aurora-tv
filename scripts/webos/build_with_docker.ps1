@@ -1,10 +1,10 @@
-# Build Moonlight TV para LG C1 via Docker
+# Build Aurora for LG webOS via Docker
 # Funciona no Windows sem WSL Ubuntu - usa container Ubuntu
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 
-Write-Host "=== Moonlight TV - Build para LG C1 (via Docker) ===" -ForegroundColor Cyan
+Write-Host "=== Aurora - Build for LG webOS (via Docker) ===" -ForegroundColor Cyan
 Write-Host ""
 
 # Verificar Docker
@@ -22,12 +22,12 @@ if (-not $dockerOk) {
     exit 1
 }
 
-Write-Host "Usando Docker para build em ambiente Ubuntu..." -ForegroundColor Green
+Write-Host "Using Docker to build in Ubuntu environment..." -ForegroundColor Green
 Write-Host ""
 
-# Montar o projeto e executar o build
+# Mount the project and run the build
 $ScriptPath = Join-Path $PSScriptRoot "docker_build_inner.sh"
-# sed remove CRLF (Windows) para funcionar no Linux
+# sed removes CRLF (Windows line endings) for Linux compatibility
 docker run --rm -v "${ProjectRoot}:/build" -v "${ScriptPath}:/docker_build.sh" -w /build ubuntu:22.04 bash -c "sed 's/\r$//' /docker_build.sh | bash"
 
 if ($LASTEXITCODE -eq 0) {
@@ -37,6 +37,6 @@ if ($LASTEXITCODE -eq 0) {
     Get-ChildItem "$ProjectRoot\dist\*.ipk" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.Name)" }
 } else {
     Write-Host ""
-    Write-Host "Build falhou." -ForegroundColor Red
+    Write-Host "Build failed." -ForegroundColor Red
     exit 1
 }

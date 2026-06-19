@@ -10,7 +10,7 @@
     "largeIcon": "icon_large.png",
     "splashBackground": "splash.png",
     "dialAppName": "Aurora",
-    "appDescription": "Aurora — cliente GameStream para LG webOS (fork do Moonlight TV). Transmite do PC com Sunshine ou NVIDIA GameStream em até 4K 120 HDR.",
+    "appDescription": "Aurora \u2014 GameStream client for LG webOS. Stream from your PC with Sunshine or NVIDIA GameStream at up to 4K 120Hz HDR.",
     "supportTouchMode": "full",
     "useAllMouseButtons": true,
     "cloudgame_active": true

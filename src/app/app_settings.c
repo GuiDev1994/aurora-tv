@@ -49,7 +49,7 @@ void settings_initialize(app_settings_t *config, char *conf_dir) {
     config->stream.audioConfiguration = AUDIO_CONFIGURATION_STEREO;
 
     config->debug_level = 0;
-    set_string(&config->language, "pt-BR");
+    set_string(&config->language, "auto");
     set_string(&config->audio_backend, "auto");
     set_string(&config->decoder, "auto");
     config->audio_device = NULL;
@@ -68,6 +68,7 @@ void settings_initialize(app_settings_t *config, char *conf_dir) {
     config->absmouse = true;
     config->virtual_mouse = false;
     config->hdr = false;
+    config->force_full_color_range = false;
     config->video_tight_sync = false;
     config->hevc = true;
     config->av1 = false;
@@ -129,6 +130,7 @@ bool settings_save(app_settings_t *config) {
     ini_write_section(fp, "video");
     ini_write_string(fp, "decoder", config->decoder);
     ini_write_bool(fp, "hdr", config->hdr);
+    ini_write_bool(fp, "force_full_color_range", config->force_full_color_range);
     ini_write_bool(fp, "tight_display_sync", config->video_tight_sync);
     ini_write_bool(fp, "hevc", config->hevc);
     ini_write_bool(fp, "av1", config->av1);
@@ -246,7 +248,7 @@ static int settings_parse(app_settings_t *config, const char *section, const cha
             config->client_refresh_rate_x100 = 24000;
         }
     } else if (INI_FULL_MATCH("video", "force_full_color_range")) {
-        /* Legacy: full range is enabled automatically when HDR is on. */
+        config->force_full_color_range = INI_IS_TRUE(value);
     } else if (INI_NAME_MATCH("surround")) {
         config->stream.audioConfiguration = parse_audio_config(value);
     } else if (INI_NAME_MATCH("sops")) {

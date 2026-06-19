@@ -345,7 +345,10 @@ void session_config_init(app_t *app, session_config_t *config, const SERVER_DATA
         config->stream.colorSpace = COLORSPACE_REC_601;
     }
     /* Full range (0–255) when HDR is on, like Moonlight Android; SDR uses limited range. */
-    config->stream.colorRange = app_config->hdr ? COLOR_RANGE_FULL : COLOR_RANGE_LIMITED;
+    /* HDR10 (PQ/SMPTE ST 2084) always uses limited range by standard.
+     * For SDR, honor force_full_color_range if the user has enabled it. */
+    config->stream.colorRange = (!app_config->hdr && app_config->force_full_color_range)
+        ? COLOR_RANGE_FULL : COLOR_RANGE_LIMITED;
     if (app_config->client_refresh_rate_x100 > 0) {
         config->stream.clientRefreshRateX100 = app_config->client_refresh_rate_x100;
     }

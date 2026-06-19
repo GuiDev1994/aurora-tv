@@ -132,6 +132,14 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     lv_obj_add_event_cb(hdr_checkbox, hdr_state_update_cb, LV_EVENT_VALUE_CHANGED, controller);
     lv_obj_add_event_cb(hdr_more, hdr_more_click_cb, LV_EVENT_CLICKED, NULL);
 
+    pref_header(view, locstr("Color"));
+    pref_checkbox(view, locstr("Full range YUV (SDR only)"), &app_configuration->force_full_color_range, false);
+    pref_desc_label(view,
+                    locstr("Request full-range (0-255) color from the host for SDR streams. "
+                           "Has no effect when HDR is enabled — HDR always uses limited range "
+                           "(SMPTE ST 2084 standard). Disable if SDR colors look washed out."),
+                    false);
+
 #if TARGET_WEBOS
     pref_header(view, locstr("Smooth playback (TV)"));
     lv_obj_t *tight_cb =
@@ -180,7 +188,7 @@ static void hdr_state_update(video_pane_t *controller) {
         lv_obj_clear_state(controller->hdr_checkbox, LV_STATE_DISABLED);
         lv_label_set_text(controller->hdr_hint,
                           locstr("HDR10 (PQ) when the host streams HDR (HEVC Main10 or AV1 Main10). "
-                                 "Enabling HDR also uses the full video color range (Android-style)."));
+                                 "HDR always uses limited color range (SMPTE ST 2084 standard)."));
     }
 }
 
