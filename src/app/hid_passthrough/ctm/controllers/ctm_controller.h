@@ -44,6 +44,9 @@ typedef struct {
     bool request_bt_mode;     /* send the Sony feature-0x05 full-BT-mode probe */
     bool composite;           /* forward EVERY HID interface, each tagged by its IN
                                * endpoint (puck); host plugs the whole composite. */
+    bool raw_acl_output;      /* inject high-rate 0x36 output via raw HCI-ACL,
+                               * bypassing the webOS one-outstanding flow control
+                               * (DS5 only); falls back to hidraw on any failure. */
 
     /* Does this type claim the device? Factory tries specific types first,
      * generic last. */

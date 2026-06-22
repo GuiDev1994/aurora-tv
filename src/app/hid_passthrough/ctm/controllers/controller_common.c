@@ -11,17 +11,21 @@
 
 #include "ctm_controller.h"
 #include "ctm_hid.h"   /* read_report_descriptor, derive_report_lengths */
+#include "ds5_acl_tx.h"   /* raw HCI-ACL 0x36 injector (DS5; hidraw fallback) */
+#include "ds5_hidfd.h"    /* borrow a hidraw fd from root ds5_txd when the jail lacks the node */
 
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <pthread.h>
+#include <sched.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <time.h>
 #include <unistd.h>
@@ -80,6 +84,42 @@ struct ctm_controller {
     ctm_transport_t xport;
     ctm_enet_client_t *enet;        /* process-owned client; borrowed by xport */
     int hid_fd;
+    ds5_acl_tx_t *acl_tx;           /* DS5 raw-ACL 0x36 injector (NULL = hidraw only).
+                                     * Created/used/freed entirely on the session thread. */
+    /* DS5 audio PLC: cache of the last valid 0x36 audio (opus) TLV block. On a
+     * host-side reservoir underrun the 0x36 arrives without an audio block (gap);
+     * we splice the cached block back in (repeat last 10ms) -> no silence, no
+     * added buffering/latency. Touched only on the session thread. */
+    int      plc_enabled;
+    int      plc_have;
+    int      plc_repeat;            /* consecutive concealed frames (capped) */
+    uint16_t plc_audio_len;
+    uint8_t  plc_audio[260];
+    /* PLC / underrun telemetry (session thread only). omit = a 0x36 arrived with
+     * NO 0x95 audio block (host reservoir underrun, op.32 skipped it); conceal =
+     * we spliced the cached block back in; capdrop = an omit we could NOT conceal
+     * (cap hit / no cache / no room) -> an audible gap reached the device. The
+     * omit rate is the direct proxy for host-side underruns; logged every 60s. */
+    unsigned long st_audio_omit;
+    unsigned long st_audio_conceal;
+    unsigned long st_audio_capdrop;
+    uint64_t plc_log_next_us;
+    /* hidraw write outcomes — where the webOS BT one-outstanding wall shows up as
+     * EAGAIN. ok=succeeded first try, eagain=had to wait, recov=waited then
+     * succeeded, drop=frame lost. drop is the audio-gap source while raw-ACL is
+     * unavailable (jail denies the HCI monitor needed for the inject template). */
+    unsigned long st_hid_ok, st_hid_eagain, st_hid_recovered, st_hid_dropped;
+    int hid_wait_ms;           /* bounded POLLOUT wait on EAGAIN (CTM_HID_WAIT_MS, default 3) */
+    /* Non-audio (0x31 rumble/trigger/LED) dedup: the host re-sends a byte-identical
+     * 0x31 every frame (only the seq nibble + CRC differ), ~80/s, which contends
+     * with the 100/s audio 0x36 for the BT one-outstanding slots and causes the
+     * on-air audio stalls. Skip a 0x31 whose payload matches the last one sent —
+     * the controller already holds that state, so it is a no-op for rumble/trigger
+     * but halves the on-air packet rate. Audio (0x36) is never deduped. */
+    int dedup_enabled;
+    size_t last31_len;
+    uint8_t last31[80];
+    unsigned long st_dedup_skipped;
     int wake_pipe[2];
 
     pthread_t session_thread;
@@ -167,6 +207,40 @@ static void ctl_log(ctm_controller_t *c, const char *fmt, ...)
         snprintf(line, sizeof(line), "%s: %s", kind, body);
         g_log_sink(line);
     }
+}
+
+/* Best-effort real-time scheduling for a hot thread, mirroring the proven
+ * ds5_av_play set_rt_prio (reader=12, output=15). The output emit path (session
+ * thread: ENet RX -> PLC -> raw-ACL inject) and the 1ms input poll must not be
+ * descheduled by the webOS H.264/HEVC decoder under combat load, which would
+ * bunch raw-ACL writes into the bursts that trip MT7921 TX-ring congestion.
+ * SCHED_FIFO if the jail grants CAP_SYS_NICE (the app already holds CAP_NET_RAW
+ * for HCI sockets + EVIOCGRAB); else fall back to nice -20. Latency-neutral: it
+ * changes only WHEN an already-mostly-blocking thread wakes, never any buffer.
+ * Gated by CTM_RT (default on) so the A/B can toggle it without a rebuild.
+ * When: at thread entry (session_main, input_thread_main). */
+static void ctl_set_rt_prio(ctm_controller_t *c, const char *who, int prio)
+{
+    const char *env = getenv("CTM_RT");
+    if (env && strcmp(env, "0") == 0) { ctl_log(c, "%s RT disabled (CTM_RT=0)", who); return; }
+    struct sched_param sp;
+    memset(&sp, 0, sizeof sp);
+    sp.sched_priority = prio;
+    if (sched_setscheduler(0, SCHED_FIFO, &sp) == 0) {
+        ctl_log(c, "%s SCHED_FIFO prio=%d", who, prio);
+    } else {
+        int e = errno;
+        (void)setpriority(PRIO_PROCESS, 0, -20);
+        ctl_log(c, "%s SCHED_FIFO denied errno=%d -> nice -20", who, e);
+    }
+}
+
+/* Bridge the raw-ACL injector's milestones into this controller's file log so a
+ * non-injecting injector (acl_inj=0) is diagnosable on-device. When: passed to
+ * ds5_acl_tx_start. */
+static void acl_log_cb(void *ctx, const char *msg)
+{
+    ctl_log((ctm_controller_t *)ctx, "[acl] %s", msg);
 }
 
 /* Send one framed CTMB message over this controller's transport. When: the
@@ -262,7 +336,16 @@ static int open_hid(ctm_controller_t *c, ctmb_device_caps_t *caps,
     }
 
     int fd = open(path, O_RDWR | O_NONBLOCK | O_CLOEXEC);
-    if (fd < 0) return -1;
+    if (fd < 0) {
+        /* The jail's /dev is a static snapshot taken at jail-build, so a controller
+         * hot-plugged onto a hidraw minor the snapshot never covered is absent here
+         * (open -> ENOENT). Borrow the open fd from the root ds5_txd broker, which
+         * sees the real /dev. Returns a normal kernel fd; everything below is
+         * unchanged. NULL broker / decline -> -1, same as a hard open failure. */
+        fd = ds5_hidfd_request(path);
+        if (fd < 0) return -1;
+        ctl_log(c, "hid fd via root broker for %s (jail node absent)", path);
+    }
 
     struct hidraw_devinfo info;
     memset(&info, 0, sizeof(info));
@@ -406,6 +489,59 @@ static int apply_output_settings(ctm_controller_t *c, uint8_t *data, size_t *len
     return c->ops->patch_output(c, data, len_io);
 }
 
+/* DS5 audio packet-loss concealment. A 0x36 carries TLV blocks: state(0x90),
+ * timing(0x91), audio/opus(0x93..0x96, ~200B), haptic(0x92), 0x00 0x00
+ * terminator, then a 4-byte CRC. When the host audio reservoir underruns the
+ * 0x36 arrives WITHOUT an audio block (haptic still present) -> a silence gap.
+ * We cache the last valid audio block and, on a missing one, splice it back in
+ * before the haptic block and re-sign. Repeats the last 10ms of audio instead
+ * of dropping it; no buffering, so no added latency. Defensive: only mutates
+ * when the layout is exactly as expected, else leaves the report untouched.
+ * Returns 1 if it spliced (caller must NOT re-CRC; done here). */
+static void ds5_audio_plc(ctm_controller_t *c, uint8_t *data, size_t len)
+{
+    if (!c->plc_enabled || !data || len < 12 || data[0] != 0x36) return;
+
+    size_t limit = len - 4;            /* exclude trailing CRC */
+    size_t pos = 2;
+    int audio_present = 0;
+    size_t haptic_pos = 0;
+    size_t blocks_end = 2;
+    while (pos + 2 <= limit) {
+        uint8_t id = data[pos];
+        size_t plen = data[pos + 1];
+        size_t blen = plen + 2;
+        if (id == 0 && plen == 0) break;          /* terminator */
+        if (blen > limit - pos) return;           /* malformed -> leave untouched */
+        if (id >= 0x93 && id <= 0x96 && plen >= 100) {
+            audio_present = 1;
+            if (blen <= sizeof(c->plc_audio)) {   /* cache the live audio block */
+                memcpy(c->plc_audio, &data[pos], blen);
+                c->plc_audio_len = (uint16_t)blen;
+                c->plc_have = 1;
+            }
+        } else if (id == 0x92) {
+            haptic_pos = pos;
+        }
+        pos += blen;
+        blocks_end = pos;
+    }
+    if (audio_present) { c->plc_repeat = 0; return; }   /* real audio: reset cap */
+    c->st_audio_omit++;                                 /* host omitted the 0x95 block (underrun) */
+    /* Cap concealment at 3 consecutive frames (~30ms): repeating one Opus frame
+     * longer becomes an audible stuck tone — worse than letting a long gap fall. */
+    if (!c->plc_have || haptic_pos == 0 || c->plc_repeat >= 3) { c->st_audio_capdrop++; return; }
+
+    /* Splice the cached audio block in before the haptic block. */
+    size_t al = c->plc_audio_len;
+    if (blocks_end + al > limit) { c->st_audio_capdrop++; return; }  /* no room before the CRC */
+    memmove(&data[haptic_pos + al], &data[haptic_pos], blocks_end - haptic_pos);
+    memcpy(&data[haptic_pos], c->plc_audio, al);
+    ctm_bt_sign_output(data, len);
+    c->plc_repeat++;
+    c->st_audio_conceal++;
+}
+
 /* Patch (via the ops hook) then write one report to the device, mutex-guarded.
  * When: every direct OUTPUT write and every paced-queue drain. */
 static int hid_write_report(ctm_controller_t *c, const uint8_t *data, size_t len)
@@ -418,13 +554,64 @@ static int hid_write_report(ctm_controller_t *c, const uint8_t *data, size_t len
     if (apply_output_settings(c, patched, &patched_len)) {
         return 0;
     }
+    /* DS5 audio packet-loss concealment (latency-free): refill a missing 0x36
+     * audio block from the last good one before the report goes out. */
+    ds5_audio_plc(c, patched, patched_len);
+    /* Drop a 0x31 (rumble/trigger/LED) byte-identical to the last sent one — the
+     * controller already holds that state. Frees BT slots for the audio 0x36.
+     * Compare [2 .. len-4): skip report id, the volatile seq byte, and the CRC. */
+    if (c->dedup_enabled && patched_len >= 8 && patched[0] == 0x31) {
+        size_t cmp = patched_len - 4;
+        if (patched_len == c->last31_len &&
+            memcmp(patched + 2, c->last31 + 2, cmp - 2) == 0) {
+            c->st_dedup_skipped++;
+            return 0;
+        }
+        if (patched_len <= sizeof(c->last31)) {
+            memcpy(c->last31, patched, patched_len);
+            c->last31_len = patched_len;
+        }
+    }
+    /* Scope B: DS5 BT output reports (0x31 rumble/trigger/LED, 0x32/0x36
+     * audio/voice-coil haptics) go out via raw HCI-ACL to dodge the webOS
+     * one-outstanding flow control. Other report ids and any not-ready/failed
+     * inject fall back to the normal hidraw write below. */
+    if (c->acl_tx && patched_len > 0 && ds5_acl_is_injectable(patched[0])) {
+        int rc = ds5_acl_tx_send(c->acl_tx, patched, patched_len);
+        if (rc == DS5_ACL_TX_SENT) { c->st_reports_out++; return 0; }
+        /* DS5_ACL_TX_DROP (transient MT7921 TX-ring full, EAGAIN/ENOBUFS) or
+         * DS5_ACL_TX_HIDRAW (not-ready seed / disabled): fall through to the
+         * webOS-paced hidraw write below rather than discard a valid 0x36
+         * (audio+haptic+state, already post-PLC). Latency-neutral on the common
+         * SENT fast path; only the rare congested frame eats the slower
+         * one-outstanding hidraw write — one slow frame beats a guaranteed gap. */
+    }
     pthread_mutex_lock(&c->hid_mutex);
     ssize_t n = write(c->hid_fd, patched, patched_len);
+    if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+        c->st_hid_eagain++;
+        /* webOS BT one-outstanding flow control: the previous ACL hasn't
+         * completed yet. Rather than drop this (post-PLC, audio-bearing) frame,
+         * wait briefly for the controller to drain (POLLOUT), then retry once.
+         * Bounded by hid_wait_ms so it cannot stall the output thread; runs on
+         * the session thread only (input is a separate thread), so controls are
+         * unaffected, and a recovered frame is merely <=hid_wait_ms late, not a
+         * silence gap. */
+        if (c->hid_wait_ms > 0) {
+            struct pollfd pf; pf.fd = c->hid_fd; pf.events = POLLOUT; pf.revents = 0;
+            if (poll(&pf, 1, c->hid_wait_ms) > 0 && (pf.revents & POLLOUT)) {
+                n = write(c->hid_fd, patched, patched_len);
+                if (n == (ssize_t)patched_len) c->st_hid_recovered++;
+            }
+        }
+    }
     pthread_mutex_unlock(&c->hid_mutex);
     if (n == (ssize_t)patched_len) {
+        c->st_hid_ok++;
         c->st_reports_out++;
         return 0;
     }
+    c->st_hid_dropped++;
     return -1;
 }
 
@@ -617,6 +804,7 @@ static void *composite_reader_main(void *arg)
 static void *input_thread_main(void *arg)
 {
     ctm_controller_t *c = (ctm_controller_t *)arg;
+    ctl_set_rt_prio(c, "ctm-input", 12);   /* 1ms hidraw poll -> game; keep prompt */
     while (!c->stop) {
         struct pollfd pfds[2];
         pfds[0].fd = c->hid_fd; pfds[0].events = POLLIN; pfds[0].revents = 0;
@@ -837,6 +1025,26 @@ static void run_session(ctm_controller_t *c, const ctmb_device_caps_t *caps,
     int link_alive = 1;
     while (!c->stop && link_alive) {
         drain_paced(c, paced_q, &paced_head, &paced_count, &next_paced_us, host_cfg.bt_pace_us);
+        /* Per-60s underrun/concealment telemetry (the A/B metric for the host
+         * priority/power fixes): omit = host-omitted 0x95 frames, conceal =
+         * spliced by PLC, capdrop = gaps that still reached the device, plus the
+         * raw-ACL inject/drop counts. Cheap: a clock read per ~1ms tick. */
+        if (c->plc_enabled) {
+            uint64_t pnow = now_us();
+            if (c->plc_log_next_us == 0) {
+                c->plc_log_next_us = pnow + 60000000ull;
+            } else if (pnow >= c->plc_log_next_us) {
+                long inj = 0, drp = 0; int rdy = 0;
+                if (c->acl_tx) ds5_acl_tx_stats(c->acl_tx, &inj, &drp, &rdy);
+                ctl_log(c, "PLC/60s: audio_omit=%lu conceal=%lu capdrop=%lu | acl_ready=%d inj=%ld drop=%ld | hid ok=%lu eagain=%lu recov=%lu drop=%lu | dedup31=%lu",
+                        c->st_audio_omit, c->st_audio_conceal, c->st_audio_capdrop, rdy, inj, drp,
+                        c->st_hid_ok, c->st_hid_eagain, c->st_hid_recovered, c->st_hid_dropped, c->st_dedup_skipped);
+                c->st_audio_omit = c->st_audio_conceal = c->st_audio_capdrop = 0;
+                c->st_hid_ok = c->st_hid_eagain = c->st_hid_recovered = c->st_hid_dropped = 0;
+                c->st_dedup_skipped = 0;
+                c->plc_log_next_us = pnow + 60000000ull;
+            }
+        }
         int timeout_ms = 50;
         if (paced_count > 0 && next_paced_us != 0) {
             uint64_t now = now_us();
@@ -902,6 +1110,7 @@ static void run_session(ctm_controller_t *c, const ctmb_device_caps_t *caps,
 static void *session_main(void *arg)
 {
     ctm_controller_t *c = (ctm_controller_t *)arg;
+    ctl_set_rt_prio(c, "ctm-session", 15);  /* output emit path: RX->PLC->raw-ACL */
     ctmb_device_caps_t caps;
     uint8_t report_desc[MAX_REPORT_DESCRIPTOR];
     uint32_t report_desc_len = 0;
@@ -912,10 +1121,31 @@ static void *session_main(void *arg)
         c->stop = 1;
         return NULL;
     }
+    /* DS5: enable the raw-ACL 0x36 output injector (Scope A) unless disabled via
+     * CTM_RAW_ACL=0 for A/B testing. Failure is non-fatal (stays on hidraw). */
+    if (c->ops && c->ops->raw_acl_output) {
+        const char *env = getenv("CTM_RAW_ACL");
+        if (!env || strcmp(env, "0") != 0) {
+            c->acl_tx = ds5_acl_tx_start(0, acl_log_cb, c);   /* hci0 = MT7921 on the TV */
+            ctl_log(c, "raw-ACL output %s", c->acl_tx ? "enabled" : "unavailable (hidraw)");
+        }
+        const char *penv = getenv("CTM_AUDIO_PLC");
+        c->plc_enabled = (!penv || strcmp(penv, "0") != 0);
+        ctl_log(c, "audio PLC %s", c->plc_enabled ? "enabled" : "disabled");
+        const char *wenv = getenv("CTM_HID_WAIT_MS");
+        c->hid_wait_ms = wenv ? atoi(wenv) : 3;
+        if (c->hid_wait_ms < 0) c->hid_wait_ms = 0;
+        if (c->hid_wait_ms > 20) c->hid_wait_ms = 20;
+        ctl_log(c, "hid EAGAIN wait=%dms", c->hid_wait_ms);
+        const char *denv = getenv("CTM_DEDUP");
+        c->dedup_enabled = (!denv || strcmp(denv, "0") != 0);
+        ctl_log(c, "0x31 dedup %s", c->dedup_enabled ? "enabled" : "disabled");
+    }
     /* Composite primary endpoints are resolved in open_composite_siblings()
      * (reliable /sys/class/input path), at run_session start. */
     if (pipe(c->wake_pipe) != 0) {
         ctl_log(c, "wake pipe failed errno=%d", errno);
+        if (c->acl_tx) { ds5_acl_tx_stop(c->acl_tx); c->acl_tx = NULL; }
         c->stop = 1;
         return NULL;
     }
@@ -937,6 +1167,13 @@ static void *session_main(void *arg)
 
         ctm_transport_disconnect(&c->xport);
         if (!c->stop) ctl_log(c, "link lost; retrying probe loop");
+    }
+    if (c->acl_tx) {
+        long inj = 0, drp = 0;
+        ds5_acl_tx_stats(c->acl_tx, &inj, &drp, NULL);
+        ctl_log(c, "raw-ACL output: injected=%ld dropped=%ld", inj, drp);
+        ds5_acl_tx_stop(c->acl_tx);
+        c->acl_tx = NULL;
     }
     c->stop = 1;
     return NULL;
