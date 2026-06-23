@@ -512,17 +512,17 @@ static void suspend_streaming(lv_event_t *event) {
 
 static void soft_keyboard_close_cb(void *userdata) {
     streaming_controller_t *controller = userdata;
+    if (!controller || !controller->soft_kbd) {
+        return;
+    }
+    lv_obj_t *kbd_obj = controller->soft_kbd;
+    controller->soft_kbd = NULL;
     app_input_set_group(&controller->global->ui.input, controller->group);
-    /* Restaurar grab/cursor para modo streaming */
     app_set_mouse_grab(&controller->global->input, true);
-    /* Guard against session already having been destroyed (e.g. Alt+F4 closed the game) */
     if (controller->global->session) {
         session_screen_keyboard_closed(controller->global->session);
     }
-    if (controller->soft_kbd) {
-        lv_obj_del(controller->soft_kbd);
-        controller->soft_kbd = NULL;
-    }
+    lv_obj_del(kbd_obj);
 }
 
 static void open_keyboard(lv_event_t *event) {
@@ -601,6 +601,7 @@ bool show_overlay(streaming_controller_t *controller) {
     app_stop_text_input(&controller->global->ui.input);
 
     update_buttons_layout(controller);
+
     return true;
 }
 

@@ -17,6 +17,7 @@
  */
 
 #include "session_input.h"
+#include "session_pointer_gesture.h"
 #include "stream/session.h"
 #include "stream/session_priv.h"
 #include "session_evmouse.h"
@@ -29,6 +30,12 @@ void session_input_init(stream_input_t *input, session_t *session, app_input_t *
     input->remoteOkPressed = false;
     input->remoteOkPressedAt = 0;
     input->remoteOkModifiers = 0;
+    input->pointerGestureActive = false;
+    input->pointerGestureDragging = false;
+    input->pointerGestureLeftDown = false;
+    input->pointerGesturePressTime = 0;
+    input->pointerGestureStartX = 0;
+    input->pointerGestureStartY = 0;
     input->view_only = config->view_only;
     input->hid_passthrough = config->hid_passthrough;
     input->stick_deadzone = config->stick_deadzone;
@@ -50,6 +57,7 @@ void session_input_deinit(stream_input_t *input) {
 }
 
 void session_input_interrupt(stream_input_t *input) {
+    pointer_gesture_reset(input);
 #if FEATURE_INPUT_EVMOUSE
     const session_config_t *config = &input->session->config;
     if (!config->view_only && config->hardware_mouse) {
@@ -73,6 +81,7 @@ void session_input_started(stream_input_t *input) {
 }
 
 void session_input_stopped(stream_input_t *input) {
+    pointer_gesture_reset(input);
     input->started = false;
     input->announcedGamepadMask = 0;
     input->remoteOkPressed = false;

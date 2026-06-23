@@ -474,6 +474,8 @@ static void show_ok(apps_fragment_t *fragment) {
     if (lv_group_get_focused(lv_obj_get_group(fragment->applist)) != fragment->applist) {
         lv_group_focus_obj(fragment->applist);
     }
+    int idx = fragment->focus_backup >= 0 ? fragment->focus_backup : 0;
+    lv_gridview_focus(fragment->applist, idx);
 }
 
 static void show_error(apps_fragment_t *fragment, const char *title, const char *hint, const char *detail) {
@@ -501,7 +503,8 @@ static void appload_loaded(apploader_list_t *apps, void *userdata) {
     int num_changes = -1;
     lv_gridview_data_change_t *changes = apps_list_detect_change(fragment->apploader_apps, apps, &num_changes);
     if (num_changes != 0) {
-        lv_gridview_focus(fragment->applist, -1);
+        fragment->focus_backup = 0;
+        lv_gridview_focus(fragment->applist, 0);
     }
     lv_gridview_set_data_advanced(fragment->applist, apps, changes, num_changes);
     if (changes != NULL) {
@@ -646,7 +649,8 @@ static void adapter_bind_view(lv_obj_t *grid, lv_obj_t *item_view, void *data, i
 static void applist_focus_enter(lv_event_t *event) {
     if (event->target != event->current_target) { return; }
     apps_fragment_t *controller = lv_event_get_user_data(event);
-    lv_gridview_focus(controller->applist, controller->focus_backup);
+    int idx = controller->focus_backup >= 0 ? controller->focus_backup : 0;
+    lv_gridview_focus(controller->applist, idx);
 }
 
 static void applist_focus_leave(lv_event_t *event) {

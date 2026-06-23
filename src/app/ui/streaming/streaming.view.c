@@ -48,10 +48,20 @@ lv_obj_t *streaming_scene_create(lv_fragment_t *self, lv_obj_t *parent) {
     lv_obj_align(video, LV_ALIGN_TOP_LEFT, LV_DPX(20), video_top);
     lv_obj_clear_flag(video, LV_OBJ_FLAG_CLICKABLE);
 
-    lv_obj_t *actions = lv_obj_create(overlay);
+    lv_obj_t *bottom_stack = lv_obj_create(overlay);
+    lv_obj_remove_style_all(bottom_stack);
+    lv_obj_set_width(bottom_stack, LV_PCT(100));
+    lv_obj_set_height(bottom_stack, LV_DPX(260));
+    lv_obj_align(bottom_stack, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_layout(bottom_stack, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(bottom_stack, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(bottom_stack, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_clear_flag(bottom_stack, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(bottom_stack, LV_OBJ_FLAG_EVENT_BUBBLE);
+
+    lv_obj_t *actions = lv_obj_create(bottom_stack);
     lv_obj_remove_style_all(actions);
     lv_obj_set_size(actions, LV_PCT(100), LV_DPX(200));
-    lv_obj_align(actions, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_clear_flag(actions, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_layout(actions, LV_LAYOUT_FLEX);
     lv_obj_set_flex_align(actions, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);

@@ -2,6 +2,8 @@
 
 #define MAT_SYMBOL_ADD_TO_QUEUE "\xee\x81\x9c"
 #define MAT_SYMBOL_ARROW_DROP_DOWN "\xee\x97\x85"
+#define MAT_SYMBOL_KEYBOARD_ARROW_LEFT "\xee\x8c\x94"
+#define MAT_SYMBOL_KEYBOARD_ARROW_UP "\xee\x8c\x96"
 #define MAT_SYMBOL_CHECK "\xee\x97\x8a"
 #define MAT_SYMBOL_CLOSE "\xee\x97\x8d"
 #define MAT_SYMBOL_DESKTOP_WINDOWS "\xee\x8c\x8c"

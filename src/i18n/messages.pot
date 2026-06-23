@@ -607,6 +607,70 @@ msgstr ""
 msgid "Full keyboard"
 msgstr ""
 
+#: src/app/ui/streaming/streaming.view.c
+msgid "Quick wheel"
+msgstr ""
+
+#: src/app/ui/streaming/wheel_pad.c
+msgid "Quick wheel"
+msgstr ""
+
+#: src/app/ui/settings/panes/input.pane.c
+msgid "Quick actions"
+msgstr ""
+
+#: src/app/ui/settings/panes/input.pane.c
+msgid "Comma-separated action ids for overlay bar (e.g. alt_tab,alt_f4,win)."
+msgstr ""
+
+#: src/app/ui/settings/panes/input.pane.c
+msgid "YELLOW button cycle (comma-separated)."
+msgstr ""
+
+#: src/app/ui/settings/panes/input.pane.c
+msgid "Quick wheel slots (8 comma-separated ids)."
+msgstr ""
+
+#: src/app/ui/settings/panes/input.pane.c
+msgid "Crown lite floating buttons"
+msgstr ""
+
+#: src/app/ui/streaming/quick_actions.c
+msgid "Alt+Tab"
+msgstr ""
+
+#: src/app/ui/streaming/quick_actions.c
+msgid "Alt+F4"
+msgstr ""
+
+#: src/app/ui/streaming/quick_actions.c
+msgid "Win"
+msgstr ""
+
+#: src/app/ui/streaming/quick_actions.c
+msgid "Esc"
+msgstr ""
+
+#: src/app/ui/streaming/quick_actions.c
+msgid "Tab"
+msgstr ""
+
+#: src/app/ui/streaming/quick_actions.c
+msgid "Print Screen"
+msgstr ""
+
+#: src/app/ui/streaming/quick_actions.c
+msgid "Ctrl+Shift+Esc"
+msgstr ""
+
+#: src/app/ui/streaming/quick_actions.c
+msgid "Keyboard"
+msgstr ""
+
+#: src/app/ui/streaming/quick_actions.c
+msgid "PrtSc"
+msgstr ""
+
 #: src/app/ui/streaming/streaming.view.c:83
 msgid "Virtual Mouse"
 msgstr ""

@@ -36,6 +36,12 @@ typedef struct stream_input_t {
     bool remoteOkPressed;
     uint32_t remoteOkPressedAt;
     char remoteOkModifiers;
+    bool pointerGestureActive;
+    bool pointerGestureDragging;
+    bool pointerGestureLeftDown;
+    uint32_t pointerGesturePressTime;
+    int pointerGestureStartX;
+    int pointerGestureStartY;
     bool view_only, no_sdl_mouse;
     bool hid_passthrough;
     uint8_t stick_deadzone;

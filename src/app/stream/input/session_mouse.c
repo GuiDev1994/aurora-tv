@@ -2,6 +2,7 @@
 
 #include "app.h"
 
+#include "stream/input/session_pointer_gesture.h"
 #include "stream/session.h"
 #include "stream/session_priv.h"
 
@@ -9,7 +10,10 @@
 #include <SDL.h>
 
 void stream_input_handle_mbutton(stream_input_t *input, const SDL_MouseButtonEvent *event) {
-    (void) input;
+    if (pointer_gesture_handle_mbutton(input, event)) {
+        return;
+    }
+
     int button;
     switch (event->button) {
         case SDL_BUTTON_LEFT:
@@ -65,6 +69,9 @@ void stream_input_handle_mmotion(stream_input_t *input, const SDL_MouseMotionEve
     }
     if (event->which == SDL_TOUCH_MOUSEID && LiGetHostFeatureFlags() & LI_FF_PEN_TOUCH_EVENTS) {
         // Don't send mouse events from touch devices if the host supports pen/touch events
+        return;
+    }
+    if (pointer_gesture_handle_mmotion(input, event)) {
         return;
     }
     if (input->no_sdl_mouse) {

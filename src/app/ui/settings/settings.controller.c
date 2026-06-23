@@ -52,6 +52,10 @@ static void on_tab_key(lv_event_t *event);
 
 static void on_tab_content_key(lv_event_t *e);
 
+static void settings_dropdown_esc_preprocess_cb(lv_event_t *e);
+
+static void settings_dropdown_arrow_preprocess_cb(lv_event_t *e);
+
 static void on_dropdown_clicked(lv_event_t *event);
 
 static void settings_controller_ctor(lv_fragment_t *self, void *args);
@@ -390,7 +394,6 @@ static void on_detail_key(lv_event_t *e) {
                         lv_dropdown_open(target);
                         controller->active_dropdown = target;
                         settings_dropdown_set_list_editing(controller, true);
-                        lv_event_send(target, LV_EVENT_RELEASED, NULL);
                     }
                     return;
                 }
@@ -401,6 +404,7 @@ static void on_detail_key(lv_event_t *e) {
                 return;
             case LV_KEY_UP:
                 if (settings_dropdown_list_open(controller, target)) {
+                    lv_event_stop_processing(e);
                     return;
                 }
                 if (lv_obj_check_type(target, &lv_textarea_class) && lv_group_get_editing(nav_detail)) {
@@ -415,6 +419,7 @@ static void on_detail_key(lv_event_t *e) {
                 return;
             case LV_KEY_DOWN:
                 if (settings_dropdown_list_open(controller, target)) {
+                    lv_event_stop_processing(e);
                     return;
                 }
                 if (lv_obj_check_type(target, &lv_textarea_class) && lv_group_get_editing(nav_detail)) {
@@ -429,6 +434,7 @@ static void on_detail_key(lv_event_t *e) {
                 return;
             case LV_KEY_LEFT:
                 if (settings_dropdown_list_open(controller, target)) {
+                    lv_event_stop_processing(e);
                     return;
                 }
                 if (lv_obj_check_type(target, &lv_textarea_class) && lv_group_get_editing(nav_detail)) {
@@ -446,6 +452,7 @@ static void on_detail_key(lv_event_t *e) {
                 return;
             case LV_KEY_RIGHT:
                 if (settings_dropdown_list_open(controller, target)) {
+                    lv_event_stop_processing(e);
                     return;
                 }
                 if (lv_obj_check_type(target, &lv_textarea_class) && lv_group_get_editing(nav_detail)) {
@@ -747,8 +754,12 @@ static void pane_child_attach_handlers(settings_controller_t *controller, lv_obj
     if (lv_obj_has_class(child, &lv_dropdown_class)) {
         lv_obj_add_event_cb(child, on_dropdown_clicked, LV_EVENT_CLICKED, controller);
         lv_obj_add_event_cb(child, on_dropdown_clicked, LV_EVENT_VALUE_CHANGED, controller);
+        lv_obj_add_event_cb(child, settings_dropdown_arrow_preprocess_cb, LV_EVENT_KEY | LV_EVENT_PREPROCESS,
+                            controller);
         if (popup) {
             lv_obj_add_event_cb(child, settings_dropdown_cancel_cb, LV_EVENT_CANCEL, controller);
+            lv_obj_add_event_cb(child, settings_dropdown_esc_preprocess_cb, LV_EVENT_KEY | LV_EVENT_PREPROCESS,
+                                controller);
         }
     }
     if (lv_obj_check_type(child, &lv_textarea_class)) {
@@ -811,8 +822,12 @@ static bool settings_dropdown_list_open(settings_controller_t *c, lv_obj_t *targ
 
 static bool settings_close_dropdown_on_back(settings_controller_t *c, lv_obj_t *target) {
     lv_obj_t *dropdown = NULL;
-    if (c->active_dropdown != NULL && lv_dropdown_is_open(c->active_dropdown)) {
-        dropdown = c->active_dropdown;
+    if (c->active_dropdown != NULL) {
+        if (lv_dropdown_is_open(c->active_dropdown)) {
+            dropdown = c->active_dropdown;
+        } else if (target == c->active_dropdown) {
+            dropdown = c->active_dropdown;
+        }
     } else if (target != NULL && lv_obj_has_class(target, &lv_dropdown_class) && lv_dropdown_is_open(target)) {
         dropdown = target;
     }
@@ -822,8 +837,96 @@ static bool settings_close_dropdown_on_back(settings_controller_t *c, lv_obj_t *
     c->active_dropdown = NULL;
     c->suppress_pane_back = true;
     settings_dropdown_set_list_editing(c, false);
-    lv_dropdown_close(dropdown);
+    if (lv_dropdown_is_open(dropdown)) {
+        lv_dropdown_close(dropdown);
+    }
+    lv_group_focus_obj(dropdown);
     return true;
+}
+
+static void settings_dropdown_esc_preprocess_cb(lv_event_t *e) {
+    if (lv_event_get_code(e) != LV_EVENT_KEY || lv_event_get_key(e) != LV_KEY_ESC) {
+        return;
+    }
+    settings_controller_t *c = lv_event_get_user_data(e);
+    if (settings_close_dropdown_on_back(c, lv_event_get_target(e))) {
+        lv_event_stop_processing(e);
+    }
+}
+
+static void settings_dropdown_arrow_preprocess_cb(lv_event_t *e) {
+    if (lv_event_get_code(e) != LV_EVENT_KEY) {
+        return;
+    }
+    settings_controller_t *c = lv_event_get_user_data(e);
+    lv_obj_t *target = lv_event_get_target(e);
+    if (!lv_obj_has_class(target, &lv_dropdown_class) || settings_dropdown_list_open(c, target)) {
+        return;
+    }
+    const uint32_t key = lv_event_get_key(e);
+    lv_group_t *nav_detail = c->pane_popup_group ? c->pane_popup_group : c->detail_group;
+    if (!nav_detail) {
+        return;
+    }
+
+    if (c->pane_popup_group != NULL) {
+        switch (key) {
+            case LV_KEY_UP:
+            case LV_KEY_LEFT:
+                lv_group_focus_prev(nav_detail);
+                lv_event_stop_processing(e);
+                return;
+            case LV_KEY_DOWN:
+            case LV_KEY_RIGHT:
+                lv_group_focus_next(nav_detail);
+                lv_event_stop_processing(e);
+                return;
+            default:
+                return;
+        }
+    }
+
+    if (c->mini) {
+        uint16_t act = lv_tabview_get_tab_act(c->tabview);
+        lv_group_t *group = c->tab_groups[act];
+        switch (key) {
+            case LV_KEY_UP:
+                lv_group_focus_prev(group);
+                lv_event_stop_processing(e);
+                return;
+            case LV_KEY_DOWN:
+                lv_group_focus_next(group);
+                lv_event_stop_processing(e);
+                return;
+            case LV_KEY_RIGHT:
+                lv_group_focus_next(group);
+                lv_event_stop_processing(e);
+                return;
+            default:
+                return;
+        }
+    }
+
+    switch (key) {
+        case LV_KEY_UP:
+            lv_group_focus_prev(nav_detail);
+            lv_event_stop_processing(e);
+            break;
+        case LV_KEY_DOWN:
+            lv_group_focus_next(nav_detail);
+            lv_event_stop_processing(e);
+            break;
+        case LV_KEY_LEFT:
+            detail_defocus(c, e);
+            lv_event_stop_processing(e);
+            break;
+        case LV_KEY_RIGHT:
+            lv_group_focus_next(nav_detail);
+            lv_event_stop_processing(e);
+            break;
+        default:
+            break;
+    }
 }
 
 static void settings_dropdown_cancel_cb(lv_event_t *e) {

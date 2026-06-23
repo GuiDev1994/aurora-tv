@@ -5,6 +5,8 @@
 
 #include "util/i18n.h"
 
+#include <stdlib.h>
+
 typedef struct input_pane_t {
     lv_fragment_t base;
 
@@ -40,7 +42,8 @@ const lv_fragment_class_t settings_pane_input_cls = {
 };
 
 static void pane_ctor(lv_fragment_t *self, void *args) {
-
+    (void) self;
+    (void) args;
 }
 
 static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
@@ -97,6 +100,8 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     pane->swap_abxy_toggle = pref_checkbox(view, locstr("Swap ABXY buttons"), &app_configuration->swap_abxy, false);
     pref_desc_label(view, locstr("Swap A/B and X/Y gamepad buttons. Useful when you prefer Nintendo-like layouts."),
                     false);
+
+    pref_desc_label(view, locstr("Press RB + RS on the gamepad during streaming to open the keyboard."), false);
 
 #if FEATURE_INPUT_EVMOUSE
     hwmouse_state_update(pane);

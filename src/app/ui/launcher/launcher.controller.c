@@ -286,7 +286,7 @@ static void cb_detail_focused(lv_event_t *event) {
     lv_fragment_t *detail_fragment = lv_fragment_manager_find_by_container(fragment->base.child_manager,
                                                                            fragment->detail);
     if (!detail_fragment || lv_obj_get_parent(event->target) != detail_fragment->obj) { return; }
-    /* Focus already in detail group; nothing else to do. */
+    focus_detail(fragment);
 }
 
 static void cb_detail_cancel(lv_event_t *event) {
@@ -306,8 +306,7 @@ static void cb_detail_key(lv_event_t *event) {
 static void cb_topbar_focused(lv_event_t *event) {
     launcher_fragment_t *controller = lv_event_get_user_data(event);
     if (!controller->pane_initialized) { return; }
-    /* No-op: focus already routed via focus_topbar(); kept for parity with the old
-     * sidebar's focused callback (some downstream code may rely on the event). */
+    focus_topbar(controller);
 }
 
 static void cb_topbar_key(lv_event_t *event) {

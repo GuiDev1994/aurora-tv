@@ -54,17 +54,7 @@ static void pref_dropdown_int_pair_change_cb(lv_event_t *event);
 
 static void pref_dropdown_string_change_cb(lv_event_t *event);
 
-static void pref_dropdown_key_hack_cb(lv_event_t *event);
-
-static void pref_dropdown_key_hack_del_cb(lv_event_t *event);
-
 static void pref_slider_value_write_back(lv_event_t *event);
-
-static void pref_dropdown_key_hack(lv_obj_t *dropdown);
-
-typedef struct pref_dropdown_key_hack_state_t {
-    bool opened;
-} pref_dropdown_key_hack_state_t;
 
 lv_obj_t *pref_pane_container(lv_obj_t *parent) {
     lv_obj_t *view = lv_obj_create(parent);
@@ -126,7 +116,6 @@ lv_obj_t *pref_dropdown_int(lv_obj_t *parent, const pref_dropdown_int_entry_t *e
     attrs->dropdown_int.write_predicate = write_predicate;
     lv_obj_add_event_cb(dropdown, pref_dropdown_int_change_cb, LV_EVENT_VALUE_CHANGED, attrs);
     lv_obj_add_event_cb(dropdown, pref_attrs_free, LV_EVENT_DELETE, attrs);
-    pref_dropdown_key_hack(dropdown);
     return dropdown;
 }
 
@@ -160,7 +149,6 @@ lv_obj_t *pref_dropdown_int_pair(lv_obj_t *parent, const pref_dropdown_int_pair_
     attrs->dropdown_int_pair.write_predicate = write_predicate;
     lv_obj_add_event_cb(dropdown, pref_dropdown_int_pair_change_cb, LV_EVENT_VALUE_CHANGED, attrs);
     lv_obj_add_event_cb(dropdown, pref_attrs_free, LV_EVENT_DELETE, attrs);
-    pref_dropdown_key_hack(dropdown);
     return dropdown;
 }
 
@@ -192,7 +180,6 @@ lv_obj_t *pref_dropdown_string(lv_obj_t *parent, const pref_dropdown_string_entr
     attrs->dropdown_string.entries = entries;
     lv_obj_add_event_cb(dropdown, pref_dropdown_string_change_cb, LV_EVENT_VALUE_CHANGED, attrs);
     lv_obj_add_event_cb(dropdown, pref_attrs_free, LV_EVENT_DELETE, attrs);
-    pref_dropdown_key_hack(dropdown);
     return dropdown;
 }
 
@@ -329,44 +316,4 @@ static void pref_slider_value_write_back(lv_event_t *event) {
     }
     *attrs->slider.ref = value * attrs->slider.step;
     lv_event_send(target, LV_EVENT_VALUE_CHANGED, NULL);
-}
-
-static void pref_dropdown_key_hack_cb(lv_event_t *event) {
-    lv_obj_t *target = lv_event_get_current_target(event);
-    pref_dropdown_key_hack_state_t *state = lv_event_get_user_data(event);
-    if (lv_event_get_code(event) == LV_EVENT_RELEASED) {
-        state->opened = lv_dropdown_is_open(target);
-        return;
-    }
-    switch (lv_event_get_key(event)) {
-        case LV_KEY_ENTER: {
-            state->opened = lv_dropdown_is_open(target);
-            return;
-        }
-        case LV_KEY_UP:
-        case LV_KEY_DOWN:
-        case LV_KEY_LEFT:
-        case LV_KEY_RIGHT: {
-            if (lv_dropdown_is_open(target)) {
-                if (state->opened) {
-                    return;
-                }
-                lv_dropdown_close(target);
-                return;
-            }
-            break;
-        }
-    }
-}
-
-static void pref_dropdown_key_hack_del_cb(lv_event_t *event) {
-    lv_mem_free(lv_event_get_user_data(event));
-}
-
-static void pref_dropdown_key_hack(lv_obj_t *dropdown) {
-    pref_dropdown_key_hack_state_t *state = lv_mem_alloc(sizeof(pref_dropdown_key_hack_state_t));
-    lv_memset_00(state, sizeof(pref_dropdown_key_hack_state_t));
-    lv_obj_add_event_cb(dropdown, pref_dropdown_key_hack_cb, LV_EVENT_RELEASED, state);
-    lv_obj_add_event_cb(dropdown, pref_dropdown_key_hack_cb, LV_EVENT_KEY, state);
-    lv_obj_add_event_cb(dropdown, pref_dropdown_key_hack_del_cb, LV_EVENT_DELETE, state);
 }

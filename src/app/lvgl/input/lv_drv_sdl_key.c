@@ -6,7 +6,9 @@
 #include "stream/input/vk.h"
 #include "platform/sdl/navkey_sdl.h"
 #include "ui/root.h"
+#include "ui/root.h"
 #include "ui/streaming/streaming.controller.h"
+#include "ui/streaming/soft_keyboard.h"
 
 #include "util/user_event.h"
 #include "util/bus.h"
@@ -23,9 +25,15 @@ static void webos_key_input_mode(app_ui_input_t *input, const SDL_KeyboardEvent 
 
 #endif
 
-static bool read_event(const SDL_Event *event, lv_drv_sdl_key_t *state);
+static bool read_webos_channel_keys(const SDL_KeyboardEvent *event, lv_drv_sdl_key_t *state);
+
+static bool ui_modal_consumes_input(void) {
+    return streaming_soft_keyboard_shown();
+}
 
 static bool read_keyboard(app_ui_input_t *input, const SDL_KeyboardEvent *event, lv_drv_sdl_key_t *state);
+
+static bool read_event(const SDL_Event *event, lv_drv_sdl_key_t *state);
 
 static void sdl_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data);
 
@@ -69,7 +77,14 @@ static void sdl_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
 #endif
         bool nav_to_lvgl = false;
         bool back_closes_kbd = false;
-        if (streaming_soft_keyboard_shown() && app->session != NULL) {
+#if TARGET_WEBOS
+        if (app_ui_is_opened(&app->ui)
+            && (app->session == NULL || ui_should_block_input())
+            && read_webos_channel_keys(&e.key, state)) {
+            nav_to_lvgl = true;
+        }
+#endif
+        if (streaming_soft_keyboard_shown()) {
 #if TARGET_WEBOS
             if (e.key.keysym.scancode == SDL_SCANCODE_WEBOS_BACK) {
                 bus_pushevent(USER_CLOSE_SOFT_KEYBOARD, NULL, NULL);
@@ -86,64 +101,84 @@ static void sdl_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
         }
         if (!nav_to_lvgl && !back_closes_kbd && app->session != NULL && session_handle_input_event(app->session, &e)) {
             state->state = LV_INDEV_STATE_RELEASED;
-        } else if (!nav_to_lvgl && !back_closes_kbd && !streaming_soft_keyboard_shown()) {
+        } else if (!nav_to_lvgl && !back_closes_kbd && !ui_modal_consumes_input()) {
             /* Avoid switching input mode while soft keyboard is open – the remote can send both
              * key and gamepad events for the same press, causing KEY ↔ GAMEPAD oscillation. */
             if (read_keyboard(input, &e.key, state)) {
                 ui_set_input_mode(input, UI_INPUT_MODE_KEY);
             }
+        } else if (nav_to_lvgl) {
+            ui_set_input_mode(input, UI_INPUT_MODE_KEY);
         }
         data->continue_reading = true;
     } else if (SDL_PeepEvents(&e, 1, SDL_GETEVENT, SDL_CONTROLLERAXISMOTION, SDL_CONTROLLERDEVICEREMAPPED) > 0) {
-        bool handled_soft_kbd = false;
-        if (streaming_soft_keyboard_shown() && app->session != NULL
+        bool handled_modal = false;
+        if (ui_modal_consumes_input()
             && (e.type == SDL_CONTROLLERBUTTONDOWN || e.type == SDL_CONTROLLERBUTTONUP)) {
             bool pressed = (e.cbutton.state == SDL_PRESSED);
             NAVKEY navkey = navkey_from_sdl(&e, &pressed);
-            stream_input_t *si = session_get_input(app->session);
-            short vk = 0;
-            bool close_kbd = false;
-            switch (navkey) {
-                case NAVKEY_UP:
-                case NAVKEY_DOWN:
-                case NAVKEY_LEFT:
-                case NAVKEY_RIGHT:
-                case NAVKEY_CONFIRM:      /* A: select focused key */
-                    read_event(&e, state);
-                    handled_soft_kbd = true;
-                    break;
-                case NAVKEY_ALTERNATIVE:  /* Y: Space */
-                    vk = VK_SPACE;
-                    break;
-                case NAVKEY_NEGATIVE:     /* X: Backspace */
-                    vk = VK_BACK;
-                    break;
-                case NAVKEY_START:        /* Start: Enter */
-                    vk = VK_RETURN;
-                    break;
-                case NAVKEY_CANCEL:       /* B: Escape + close */
-                    vk = VK_ESCAPE;
-                    if (pressed) close_kbd = true;
-                    break;
-                default:
-                    break;
-            }
-            if (vk != 0) {
-                stream_input_send_key_event(si, vk, pressed, 0);
-                if (close_kbd) {
-                    bus_pushevent(USER_CLOSE_SOFT_KEYBOARD, NULL, NULL);
+            if (streaming_soft_keyboard_shown() && app->session != NULL) {
+                stream_input_t *si = session_get_input(app->session);
+                short vk = 0;
+                bool close_kbd = false;
+                switch (navkey) {
+                    case NAVKEY_UP:
+                    case NAVKEY_DOWN:
+                    case NAVKEY_LEFT:
+                    case NAVKEY_RIGHT:
+                    case NAVKEY_CONFIRM:      /* A: select focused key */
+                        read_event(&e, state);
+                        handled_modal = true;
+                        break;
+                    case NAVKEY_ALTERNATIVE:  /* Y: Space */
+                        vk = VK_SPACE;
+                        break;
+                    case NAVKEY_NEGATIVE:     /* X: Backspace */
+                        vk = VK_BACK;
+                        break;
+                    case NAVKEY_START:        /* Start: Enter */
+                        vk = VK_RETURN;
+                        break;
+                    case NAVKEY_CANCEL:       /* B: Escape + close */
+                        vk = VK_ESCAPE;
+                        if (pressed) close_kbd = true;
+                        break;
+                    default:
+                        break;
                 }
-                handled_soft_kbd = true;
+                if (vk != 0) {
+                    stream_input_send_key_event(si, vk, pressed, 0);
+                    if (close_kbd) {
+                        bus_pushevent(USER_CLOSE_SOFT_KEYBOARD, NULL, NULL);
+                    }
+                    handled_modal = true;
+                }
+            } else if (streaming_soft_keyboard_shown()) {
+                switch (navkey) {
+                    case NAVKEY_UP:
+                    case NAVKEY_DOWN:
+                    case NAVKEY_LEFT:
+                    case NAVKEY_RIGHT:
+                    case NAVKEY_CONFIRM:
+                    case NAVKEY_CANCEL:
+                        read_event(&e, state);
+                        handled_modal = true;
+                        break;
+                    default:
+                        break;
+                }
             }
         }
-        if (!handled_soft_kbd && app->session != NULL && session_handle_input_event(app->session, &e)) {
+        if (!handled_modal && app->session != NULL && session_handle_input_event(app->session, &e)) {
             state->state = LV_INDEV_STATE_RELEASED;
-        } else if (!handled_soft_kbd && !streaming_soft_keyboard_shown()) {
+        } else if (!handled_modal && !ui_modal_consumes_input()) {
             /* Avoid switching input mode while soft keyboard is open – prevents KEY ↔ GAMEPAD
              * loop when remote sends both key and gamepad events for combos like Alt+Q. */
             if (read_event(&e, state)) {
                 ui_set_input_mode(input, UI_INPUT_MODE_GAMEPAD);
             }
+        } else if (handled_modal) {
+            ui_set_input_mode(input, UI_INPUT_MODE_GAMEPAD);
         }
         data->continue_reading = true;
     } else if (SDL_PeepEvents(&e, 1, SDL_GETEVENT, SDL_TEXTINPUT, SDL_TEXTINPUT) > 0) {
@@ -276,6 +311,22 @@ static bool read_keyboard(app_ui_input_t *input, const SDL_KeyboardEvent *event,
 
 #if TARGET_WEBOS
 
+static bool read_webos_channel_keys(const SDL_KeyboardEvent *event, lv_drv_sdl_key_t *state) {
+    bool pressed = event->type == SDL_KEYDOWN;
+    switch ((int) event->keysym.scancode) {
+        case SDL_SCANCODE_WEBOS_CH_DOWN:
+            state->key = LV_KEY_DOWN;
+            state->state = pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+            return true;
+        case SDL_SCANCODE_WEBOS_CH_UP:
+            state->key = LV_KEY_UP;
+            state->state = pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+            return true;
+        default:
+            return false;
+    }
+}
+
 static bool read_webos_key(app_ui_input_t *input, const SDL_KeyboardEvent *event, lv_drv_sdl_key_t *state) {
     app_t *app = input->ui->app;
     switch ((int) event->keysym.scancode) {
@@ -327,6 +378,14 @@ static void webos_key_input_mode(app_ui_input_t *input, const SDL_KeyboardEvent 
         default:
             break;
     }
+}
+
+#else
+
+static bool read_webos_channel_keys(const SDL_KeyboardEvent *event, lv_drv_sdl_key_t *state) {
+    (void) event;
+    (void) state;
+    return false;
 }
 
 #endif

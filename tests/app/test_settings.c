@@ -36,9 +36,21 @@ void testWriteINI() {
     settings.ini_path = ini_backup;
 }
 
+void testSyncRefreshRate() {
+    settings.stream.fps = 119;
+    settings.client_refresh_rate_x100 = 11988;
+    settings_sync_refresh_rate(&settings);
+    TEST_ASSERT_EQUAL_INT(120, settings.stream.fps);
+    settings.client_refresh_rate_x100 = 0;
+    settings.stream.fps = 60;
+    settings_sync_refresh_rate(&settings);
+    TEST_ASSERT_EQUAL_INT(60, settings.stream.fps);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(testReadINI);
     RUN_TEST(testWriteINI);
+    RUN_TEST(testSyncRefreshRate);
     return UNITY_END();
 }

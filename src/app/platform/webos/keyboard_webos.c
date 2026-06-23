@@ -4,6 +4,7 @@
 #include "ui/streaming/streaming.controller.h"
 
 #include "stream/input/session_input.h"
+#include "app_settings.h"
 #include "stream/input/vk.h"
 #include "stream/session.h"
 #include "stream/session_priv.h"
@@ -44,9 +45,15 @@ bool stream_input_webos_intercept_remote_keys(stream_input_t *input, const SDL_K
             *keyCode = VK_ESCAPE /* SDL_SCANCODE_ESCAPE */;
             return false;
         case SDL_SCANCODE_WEBOS_CH_UP:
+            if (session == NULL || ui_should_block_input()) {
+                return true;
+            }
             *keyCode = VK_PRIOR /* SDL_SCANCODE_PAGEUP */;
             return false;
         case SDL_SCANCODE_WEBOS_CH_DOWN:
+            if (session == NULL || ui_should_block_input()) {
+                return true;
+            }
             *keyCode = VK_NEXT /* SDL_SCANCODE_PAGEDOWN */;
             return false;
         case SDL_SCANCODE_WEBOS_BLUE:
@@ -63,9 +70,6 @@ bool stream_input_webos_intercept_remote_keys(stream_input_t *input, const SDL_K
             /* RED keeps opening the streaming overlay (options menu). */
             bus_pushevent(USER_OPEN_OVERLAY, NULL, NULL);
             return true;
-        case SDL_SCANCODE_WEBOS_YELLOW:
-            /* YELLOW is intentionally unbound during streaming (was the old keyboard shortcut). */
-            return false;
         default:
             return false;
     }

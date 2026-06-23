@@ -22,6 +22,7 @@
 #include "client.h"
 #include "errors.h"
 #include "priv.h"
+#include "logging.h"
 
 #include <Limelight.h>
 
@@ -64,6 +65,9 @@ static bool construct_url(GS_CLIENT, char *url, size_t ulen, bool secure, const 
 static bool append_param(char *url, size_t ulen, const char *param, const char *value_fmt, ...);
 
 static bool append_params_raw(char *url, size_t ulen, const char *params);
+
+static void append_launch_mode_param(char *url, size_t url_len, int width, int height, int fps,
+                                     int client_refresh_x100, bool is_gfe);
 
 static uint16_t server_port(const SERVER_DATA *server, bool secure);
 
@@ -480,6 +484,19 @@ int gs_applist(GS_CLIENT hnd, const SERVER_DATA *server, PAPP_LIST *list) {
     return ret;
 }
 
+static void append_launch_mode_param(char *url, size_t url_len, int width, int height, int fps,
+                                     int client_refresh_x100, bool is_gfe) {
+    /* Apollo and several Sunshine forks parse the third mode component with atof() and
+     * store refresh rate in millihertz (119.88 -> 119880). Sending an integer (120) makes
+     * them run at exactly 120 Hz even when clientRefreshRateX100 carries 11988. */
+    if (!is_gfe && client_refresh_x100 > 0 && (client_refresh_x100 % 100) != 0) {
+        append_param(url, url_len, "mode", "%dx%dx%d.%02d", width, height,
+                     client_refresh_x100 / 100, client_refresh_x100 % 100);
+    } else {
+        append_param(url, url_len, "mode", "%dx%dx%d", width, height, fps);
+    }
+}
+
 int gs_start_app(GS_CLIENT hnd, PSERVER_DATA server, STREAM_CONFIGURATION *config, int appId, bool is_gfe, bool sops,
                  bool localaudio, int gamepad_mask, const char* surround_params) {
     int ret = GS_OK;
@@ -528,12 +545,14 @@ int gs_start_app(GS_CLIENT hnd, PSERVER_DATA server, STREAM_CONFIGURATION *confi
     bytes_to_hex((unsigned char *) config->remoteInputAesKey, rikey_hex, 16);
 
     data = http_data_alloc();
-    bool resume = server->currentGame == 0;
+    /* Resume only when reconnecting to the same app already running on the host.
+     * Switching apps (e.g. game -> Desktop) must use launch, not resume. */
+    bool reconnect_same_app = server->currentGame != 0 && server->currentGame == appId;
 
-    if (resume) {
-        gs_set_timeout(hnd, 30);
-    } else {
+    if (reconnect_same_app) {
         gs_set_timeout(hnd, 120);
+    } else {
+        gs_set_timeout(hnd, 30);
     }
 
     // Using an FPS value over 60 causes SOPS to default to 720p60,
@@ -543,11 +562,29 @@ int gs_start_app(GS_CLIENT hnd, PSERVER_DATA server, STREAM_CONFIGURATION *confi
     int fps = is_gfe && config->fps > 60 ? 0 : config->fps;
 
     int surround_info = SURROUNDAUDIOINFO_FROM_AUDIO_CONFIGURATION(config->audioConfiguration);
-    const char *action = resume ? "launch" : "resume";
+    const char *action = reconnect_same_app ? "resume" : "launch";
+    if (config->clientRefreshRateX100 > 0) {
+        if (!is_gfe && (config->clientRefreshRateX100 % 100) != 0) {
+            commons_log_info("GameStream",
+                             "App %d via %s (host currentGame=%d, mode=%dx%dx%d.%02d, clientRefreshRateX100=%d)",
+                             appId, action, server->currentGame, config->width, config->height,
+                             config->clientRefreshRateX100 / 100, config->clientRefreshRateX100 % 100,
+                             config->clientRefreshRateX100);
+        } else {
+            commons_log_info("GameStream",
+                             "App %d via %s (host currentGame=%d, mode=%dx%dx%d, clientRefreshRateX100=%d)",
+                             appId, action, server->currentGame, config->width, config->height, fps,
+                             config->clientRefreshRateX100);
+        }
+    } else {
+        commons_log_info("GameStream", "App %d via %s (host currentGame=%d, mode=%dx%dx%d)",
+                         appId, action, server->currentGame, config->width, config->height, fps);
+    }
     construct_url(hnd, url, sizeof(url), true, server->serverInfo.address, server_port(server, true), action,
                   "appid=%d", appId);
 
-    append_param(url, sizeof(url), "mode", "%dx%dx%d", config->width, config->height, fps);
+    append_launch_mode_param(url, sizeof(url), config->width, config->height, fps,
+                             config->clientRefreshRateX100, is_gfe);
     /* Send precise fractional refresh rate (Hz * 100) so Sunshine forks that read this parameter
      * can configure their virtual display at the actual rate (e.g. 11988 = 119.88 Hz). The integer
      * `mode` FPS above stays as a fallback for hosts that don't recognize this hint. */
@@ -566,7 +603,7 @@ int gs_start_app(GS_CLIENT hnd, PSERVER_DATA server, STREAM_CONFIGURATION *confi
         append_param(url, sizeof(url), "surroundParams", surround_params);
     }
     append_param(url, sizeof(url), "continuousAudio", "1");
-    if (!resume || !is_gfe) {
+    if (!reconnect_same_app || !is_gfe) {
         if (config->supportedVideoFormats & VIDEO_FORMAT_MASK_10BIT) {
             append_param(url, sizeof(url), "hdrMode", "1");
             append_param(url, sizeof(url), "clientHdrCapVersion", "0");

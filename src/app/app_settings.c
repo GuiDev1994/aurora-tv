@@ -28,6 +28,12 @@ static void set_string(char **field, const char *value);
 
 static void set_int(int *field, const char *value);
 
+void settings_sync_refresh_rate(app_settings_t *config) {
+    if (config->client_refresh_rate_x100 > 0) {
+        config->stream.fps = (config->client_refresh_rate_x100 + 50) / 100;
+    }
+}
+
 
 const audio_config_entry_t audio_configs[] = {
         {AUDIO_CONFIGURATION_STEREO,      "stereo", translatable("Stereo")},
@@ -86,13 +92,18 @@ void settings_initialize(app_settings_t *config, char *conf_dir) {
 }
 
 bool settings_read(app_settings_t *config) {
-    return ini_parse(config->ini_path, (ini_handler) settings_parse, config) == 0;
+    int ret = ini_parse(config->ini_path, (ini_handler) settings_parse, config);
+    if (ret == 0) {
+        settings_sync_refresh_rate(config);
+    }
+    return ret == 0;
 }
 
 bool settings_save(app_settings_t *config) {
     if (config->ini_path == NULL) {
         return false;
     }
+    settings_sync_refresh_rate(config);
     FILE *fp = fopen(config->ini_path, "w");
     if (!fp) {
         return false;

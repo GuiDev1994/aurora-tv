@@ -1,5 +1,6 @@
 #include "pref_fps.h"
 
+#include "app.h"
 #include "lvgl/util/lv_app_utils.h"
 
 #include "util/i18n.h"
@@ -200,6 +201,7 @@ static void cus_fps_dialog_cb(lv_event_t *e) {
     if (ctx->refresh_rate_x100_ref != NULL) {
         *ctx->refresh_rate_x100_ref = x100;
     }
+    settings_sync_refresh_rate(app_configuration);
     ctx->cus_value_set = true;
     lv_event_send(ctx->dropdown, LV_EVENT_VALUE_CHANGED, NULL);
     lv_msgbox_close_async(mbox);

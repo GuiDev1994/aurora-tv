@@ -27,7 +27,19 @@ int session_worker(session_t *session) {
     }
 #endif
 
-    commons_log_info("Session", "Launch app %d...", appId);
+    commons_log_info("Session", "Launch app %d (host currentGame=%d)...", appId, server->currentGame);
+    if (session->config.stream.clientRefreshRateX100 > 0) {
+        commons_log_info("Session",
+                         "Stream mode %dx%dx%d, clientRefreshRateX100=%d (%.2f Hz), bitrate %d kbps",
+                         session->config.stream.width, session->config.stream.height,
+                         session->config.stream.fps, session->config.stream.clientRefreshRateX100,
+                         session->config.stream.clientRefreshRateX100 / 100.0,
+                         session->config.stream.bitrate);
+    } else {
+        commons_log_info("Session", "Stream mode %dx%dx%d, bitrate %d kbps (no fractional refresh rate)",
+                         session->config.stream.width, session->config.stream.height,
+                         session->config.stream.fps, session->config.stream.bitrate);
+    }
     GS_CLIENT client = app_gs_client_new(app);
     const char *surround_params = NULL;
 #if TARGET_WEBOS
@@ -52,8 +64,6 @@ int session_worker(session_t *session) {
         goto thread_cleanup;
     }
 
-    commons_log_info("Session", "Video %d x %d, %d net_fps, %d kbps", session->config.stream.width,
-                     session->config.stream.height, session->config.stream.fps, session->config.stream.bitrate);
     commons_log_info("Session", "Audio %d channels",
                      CHANNEL_COUNT_FROM_AUDIO_CONFIGURATION(session->config.stream.audioConfiguration));
 

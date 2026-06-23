@@ -102,6 +102,9 @@ bool settings_read(app_settings_t *config);
 
 bool settings_save(app_settings_t *config);
 
+/** Keep stream.fps aligned with client_refresh_rate_x100 when a fractional rate is set. */
+void settings_sync_refresh_rate(app_settings_t *config);
+
 void settings_clear(app_settings_t *config);
 
 int settings_optimal_bitrate(const SS4S_VideoCapabilities *capabilities, int w, int h, int fps);
