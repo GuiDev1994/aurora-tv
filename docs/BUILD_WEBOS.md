@@ -241,6 +241,28 @@ When HID Passthrough is enabled, Aurora does **not** send Moonlight gamepad even
 | Flydigi Apex 4 | `flydigi` | `flydigi_apex4_identity.map` | Enable **Recognize as native Flydigi on PC** in the HID panel |
 | Gamesir / generic | `hid` | `hid_identity.map` | Single-interface passthrough |
 
+### DualSense (DS5) — optional raw ACL output (webOS)
+
+webOS paces Bluetooth HID output **one-outstanding** (~30–40 ms between ACL writes), which degrades DS5 controller audio/haptics (~100 Hz → ~62 Hz with jitter). Aurora integrates an **optional** raw-ACL forwarder (from [PR #18](https://github.com/GuiDev1994/aurora-tv/pull/18)) that bypasses this when a root companion daemon is running.
+
+**Without the daemon:** behavior is unchanged (normal `/dev/hidraw` writes).
+
+**With the daemon:** install and run **`ds5_txd`** from [webos-ds5-raw-acl](https://github.com/sh00bx/webos-ds5-raw-acl) on the TV (root / dev mode). The daemon injects DS5 output reports (0x31/0x32/0x36) directly as HCI ACL packets.
+
+Optional environment variables (defaults shown):
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `CTM_RAW_ACL` | on | Set `0` to disable raw-ACL forwarding |
+| `CTM_AUDIO_PLC` | on | Packet-loss concealment for missing audio blocks in 0x36 |
+| `CTM_HID_WAIT_MS` | `3` | Bounded wait on hidraw `EAGAIN` (0–20 ms) |
+| `CTM_DEDUP` | on | Skip duplicate 0x31 rumble/LED reports |
+| `CTM_RT` | on | Real-time scheduling for I/O threads |
+| `DS5_ACL_SOCK` | `/tmp/ds5_acl.sock` | Daemon inject socket |
+| `DS5_HIDFD_SOCK` | `/tmp/ds5_hidfd.sock` | hidraw fd broker socket |
+
+TV log should show `raw-ACL forward ACTIVE` when the daemon template is ready. Per-controller logs (`/tmp/ctm-*.log`) include `PLC/60s` telemetry every minute.
+
 Build the Windows agent from the vendored submodule: see **[CTM_USBIP.md](CTM_USBIP.md)**.
 
 For other devices that fail on the host, add a `.map` in [CTM-USBIP](https://github.com/CTM-Bridge/CTM-USBIP).

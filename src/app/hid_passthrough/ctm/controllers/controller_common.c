@@ -12,6 +12,8 @@
 #include "ctm_controller.h"
 #include "ctm_hid.h"   /* read_report_descriptor, derive_report_lengths */
 #include "ctm_state.h" /* composite_usb_device_dir_by_busid */
+#include "ds5_acl_tx.h"
+#include "ds5_hidfd.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -19,11 +21,13 @@
 #include <limits.h>
 #include <poll.h>
 #include <pthread.h>
+#include <sched.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <time.h>
@@ -103,6 +107,22 @@ struct ctm_controller {
     ctm_transport_t xport;
     ctm_enet_client_t *enet;        /* process-owned client; borrowed by xport */
     int hid_fd;
+    ds5_acl_tx_t *acl_tx;          /* DS5 raw-ACL forwarder (NULL = hidraw only) */
+    int plc_enabled;
+    int plc_have;
+    int plc_repeat;
+    uint16_t plc_audio_len;
+    uint8_t plc_audio[260];
+    unsigned long st_audio_omit;
+    unsigned long st_audio_conceal;
+    unsigned long st_audio_capdrop;
+    uint64_t plc_log_next_us;
+    unsigned long st_hid_ok, st_hid_eagain, st_hid_recovered, st_hid_dropped;
+    int hid_wait_ms;
+    int dedup_enabled;
+    size_t last31_len;
+    uint8_t last31[80];
+    unsigned long st_dedup_skipped;
     int wake_pipe[2];
 
     pthread_t session_thread;
@@ -200,6 +220,30 @@ static void ctl_log(ctm_controller_t *c, const char *fmt, ...)
     }
 }
 
+static void ctl_set_rt_prio(ctm_controller_t *c, const char *who, int prio)
+{
+    const char *env = getenv("CTM_RT");
+    if (env && strcmp(env, "0") == 0) {
+        ctl_log(c, "%s RT disabled (CTM_RT=0)", who);
+        return;
+    }
+    struct sched_param sp;
+    memset(&sp, 0, sizeof sp);
+    sp.sched_priority = prio;
+    if (sched_setscheduler(0, SCHED_FIFO, &sp) == 0) {
+        ctl_log(c, "%s SCHED_FIFO prio=%d", who, prio);
+    } else {
+        int e = errno;
+        (void)setpriority(PRIO_PROCESS, 0, -20);
+        ctl_log(c, "%s SCHED_FIFO denied errno=%d -> nice -20", who, e);
+    }
+}
+
+static void acl_log_cb(void *ctx, const char *msg)
+{
+    ctl_log((ctm_controller_t *)ctx, "[acl] %s", msg);
+}
+
 /* Send one framed CTMB message over this controller's transport. When: the
  * reader thread (input reports), the session thread (HELLO + feature replies). */
 static int c_send(ctm_controller_t *c, uint16_t type, uint32_t flags,
@@ -278,7 +322,13 @@ static int open_hid(ctm_controller_t *c, ctmb_device_caps_t *caps,
     }
 
     int fd = open(path, O_RDWR | O_NONBLOCK | O_CLOEXEC);
-    if (fd < 0) return -1;
+    if (fd < 0) {
+        fd = ds5_hidfd_request(path);
+        if (fd < 0) {
+            return -1;
+        }
+        ctl_log(c, "hid fd via root broker for %s (jail node absent)", path);
+    }
 
     struct hidraw_devinfo info;
     memset(&info, 0, sizeof(info));
@@ -587,6 +637,62 @@ static int apply_output_settings(ctm_controller_t *c, uint8_t *data, size_t *len
     return c->ops->patch_output(c, data, len_io);
 }
 
+static void ds5_audio_plc(ctm_controller_t *c, uint8_t *data, size_t len)
+{
+    if (!c->plc_enabled || !data || len < 12 || data[0] != 0x36) {
+        return;
+    }
+
+    size_t limit = len - 4;
+    size_t pos = 2;
+    int audio_present = 0;
+    size_t haptic_pos = 0;
+    size_t blocks_end = 2;
+    while (pos + 2 <= limit) {
+        uint8_t id = data[pos];
+        size_t plen = data[pos + 1];
+        size_t blen = plen + 2;
+        if (id == 0 && plen == 0) {
+            break;
+        }
+        if (blen > limit - pos) {
+            return;
+        }
+        if (id >= 0x93 && id <= 0x96 && plen >= 100) {
+            audio_present = 1;
+            if (blen <= sizeof(c->plc_audio)) {
+                memcpy(c->plc_audio, &data[pos], blen);
+                c->plc_audio_len = (uint16_t)blen;
+                c->plc_have = 1;
+            }
+        } else if (id == 0x92) {
+            haptic_pos = pos;
+        }
+        pos += blen;
+        blocks_end = pos;
+    }
+    if (audio_present) {
+        c->plc_repeat = 0;
+        return;
+    }
+    c->st_audio_omit++;
+    if (!c->plc_have || haptic_pos == 0 || c->plc_repeat >= 3) {
+        c->st_audio_capdrop++;
+        return;
+    }
+
+    size_t al = c->plc_audio_len;
+    if (blocks_end + al > limit) {
+        c->st_audio_capdrop++;
+        return;
+    }
+    memmove(&data[haptic_pos + al], &data[haptic_pos], blocks_end - haptic_pos);
+    memcpy(&data[haptic_pos], c->plc_audio, al);
+    ctm_bt_sign_output(data, len);
+    c->plc_repeat++;
+    c->st_audio_conceal++;
+}
+
 /* Patch (via the ops hook) then write one report to the device, mutex-guarded.
  * When: every direct OUTPUT write and every paced-queue drain. */
 static int hid_write_report(ctm_controller_t *c, const uint8_t *data, size_t len)
@@ -599,13 +705,50 @@ static int hid_write_report(ctm_controller_t *c, const uint8_t *data, size_t len
     if (apply_output_settings(c, patched, &patched_len)) {
         return 0;
     }
+    ds5_audio_plc(c, patched, patched_len);
+    if (c->dedup_enabled && patched_len >= 8 && patched[0] == 0x31) {
+        size_t cmp = patched_len - 4;
+        if (patched_len == c->last31_len &&
+            memcmp(patched + 2, c->last31 + 2, cmp - 2) == 0) {
+            c->st_dedup_skipped++;
+            return 0;
+        }
+        if (patched_len <= sizeof(c->last31)) {
+            memcpy(c->last31, patched, patched_len);
+            c->last31_len = patched_len;
+        }
+    }
+    if (c->acl_tx && patched_len > 0 && ds5_acl_is_injectable(patched[0])) {
+        int rc = ds5_acl_tx_send(c->acl_tx, patched, patched_len);
+        if (rc == DS5_ACL_TX_SENT) {
+            c->st_reports_out++;
+            return 0;
+        }
+    }
     pthread_mutex_lock(&c->hid_mutex);
     ssize_t n = write(c->hid_fd, patched, patched_len);
+    if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+        c->st_hid_eagain++;
+        if (c->hid_wait_ms > 0) {
+            struct pollfd pf;
+            pf.fd = c->hid_fd;
+            pf.events = POLLOUT;
+            pf.revents = 0;
+            if (poll(&pf, 1, c->hid_wait_ms) > 0 && (pf.revents & POLLOUT)) {
+                n = write(c->hid_fd, patched, patched_len);
+                if (n == (ssize_t)patched_len) {
+                    c->st_hid_recovered++;
+                }
+            }
+        }
+    }
     pthread_mutex_unlock(&c->hid_mutex);
     if (n == (ssize_t)patched_len) {
+        c->st_hid_ok++;
         c->st_reports_out++;
         return 0;
     }
+    c->st_hid_dropped++;
     return -1;
 }
 
@@ -1176,6 +1319,7 @@ static void *composite_reader_main(void *arg)
 static void *input_thread_main(void *arg)
 {
     ctm_controller_t *c = (ctm_controller_t *)arg;
+    ctl_set_rt_prio(c, "ctm-input", 12);
     while (!c->stop) {
         struct pollfd pfds[2];
         pfds[0].fd = c->hid_fd; pfds[0].events = POLLIN; pfds[0].revents = 0;
@@ -1416,6 +1560,26 @@ static void run_session(ctm_controller_t *c, const ctmb_device_caps_t *caps,
     int link_alive = 1;
     while (!c->stop && link_alive) {
         drain_paced(c, paced_q, &paced_head, &paced_count, &next_paced_us, host_cfg.bt_pace_us);
+        if (c->plc_enabled) {
+            uint64_t pnow = now_us();
+            if (c->plc_log_next_us == 0) {
+                c->plc_log_next_us = pnow + 60000000ull;
+            } else if (pnow >= c->plc_log_next_us) {
+                long inj = 0, drp = 0;
+                int rdy = 0;
+                if (c->acl_tx) {
+                    ds5_acl_tx_stats(c->acl_tx, &inj, &drp, &rdy);
+                }
+                ctl_log(c, "PLC/60s: audio_omit=%lu conceal=%lu capdrop=%lu | acl_ready=%d inj=%ld drop=%ld | hid ok=%lu eagain=%lu recov=%lu drop=%lu | dedup31=%lu",
+                        c->st_audio_omit, c->st_audio_conceal, c->st_audio_capdrop, rdy, inj, drp,
+                        c->st_hid_ok, c->st_hid_eagain, c->st_hid_recovered, c->st_hid_dropped,
+                        c->st_dedup_skipped);
+                c->st_audio_omit = c->st_audio_conceal = c->st_audio_capdrop = 0;
+                c->st_hid_ok = c->st_hid_eagain = c->st_hid_recovered = c->st_hid_dropped = 0;
+                c->st_dedup_skipped = 0;
+                c->plc_log_next_us = pnow + 60000000ull;
+            }
+        }
         int timeout_ms = 50;
         if (paced_count > 0 && next_paced_us != 0) {
             uint64_t now = now_us();
@@ -1482,9 +1646,33 @@ static void run_session(ctm_controller_t *c, const ctmb_device_caps_t *caps,
 static void *session_main(void *arg)
 {
     ctm_controller_t *c = (ctm_controller_t *)arg;
+    ctl_set_rt_prio(c, "ctm-session", 15);
     ctmb_device_caps_t caps;
     uint8_t report_desc[MAX_REPORT_DESCRIPTOR];
     uint32_t report_desc_len = 0;
+
+    if (c->ops && c->ops->raw_acl_output) {
+        const char *env = getenv("CTM_RAW_ACL");
+        if (!env || strcmp(env, "0") != 0) {
+            c->acl_tx = ds5_acl_tx_start(0, acl_log_cb, c);
+            ctl_log(c, "raw-ACL output %s", c->acl_tx ? "enabled" : "unavailable (hidraw)");
+        }
+        const char *penv = getenv("CTM_AUDIO_PLC");
+        c->plc_enabled = (!penv || strcmp(penv, "0") != 0);
+        ctl_log(c, "audio PLC %s", c->plc_enabled ? "enabled" : "disabled");
+        const char *wenv = getenv("CTM_HID_WAIT_MS");
+        c->hid_wait_ms = wenv ? atoi(wenv) : 3;
+        if (c->hid_wait_ms < 0) {
+            c->hid_wait_ms = 0;
+        }
+        if (c->hid_wait_ms > 20) {
+            c->hid_wait_ms = 20;
+        }
+        ctl_log(c, "hid EAGAIN wait=%dms", c->hid_wait_ms);
+        const char *denv = getenv("CTM_DEDUP");
+        c->dedup_enabled = (!denv || strcmp(denv, "0") != 0);
+        ctl_log(c, "0x31 dedup %s", c->dedup_enabled ? "enabled" : "disabled");
+    }
 
     c->hid_fd = open_hid(c, &caps, report_desc, &report_desc_len);
     if (c->hid_fd < 0 && c->ops && strcmp(c->ops->kind, "flydigi") == 0 &&
@@ -1503,6 +1691,10 @@ static void *session_main(void *arg)
      * (reliable /sys/class/input path), at run_session start. */
     if (pipe(c->wake_pipe) != 0) {
         ctl_log(c, "wake pipe failed errno=%d", errno);
+        if (c->acl_tx) {
+            ds5_acl_tx_stop(c->acl_tx);
+            c->acl_tx = NULL;
+        }
         c->stop = 1;
         return NULL;
     }
@@ -1524,6 +1716,13 @@ static void *session_main(void *arg)
 
         ctm_transport_disconnect(&c->xport);
         if (!c->stop) ctl_log(c, "link lost; retrying probe loop");
+    }
+    if (c->acl_tx) {
+        long inj = 0, drp = 0;
+        ds5_acl_tx_stats(c->acl_tx, &inj, &drp, NULL);
+        ctl_log(c, "raw-ACL output: injected=%ld dropped=%ld", inj, drp);
+        ds5_acl_tx_stop(c->acl_tx);
+        c->acl_tx = NULL;
     }
     c->stop = 1;
     return NULL;

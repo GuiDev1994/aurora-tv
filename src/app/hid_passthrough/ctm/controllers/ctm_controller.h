@@ -47,6 +47,8 @@ typedef struct {
                                * endpoint (puck); host plugs the whole composite. */
     bool composite_evdev_gamepad; /* Flydigi XInput: feed xpad/js evdev as HID on the
                                    * gamepad interface IN endpoint (no hidraw). */
+    bool raw_acl_output;          /* DS5: inject high-rate output via raw HCI-ACL
+                                   * forwarder; falls back to hidraw on failure. */
 
     /* Does this type claim the device? Factory tries specific types first,
      * generic last. */

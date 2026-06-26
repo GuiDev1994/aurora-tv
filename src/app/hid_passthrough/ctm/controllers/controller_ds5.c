@@ -180,6 +180,7 @@ const ctm_controller_ops_t ctm_controller_ds5_ops = {
     .needs_host_config = true,
     .grab_evdev = true,
     .request_bt_mode = true,
+    .raw_acl_output = true,
     .matches = ds5_matches,
     .select_node = NULL,
     .on_plug_init = NULL,

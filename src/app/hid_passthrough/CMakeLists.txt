@@ -8,6 +8,8 @@ if (TARGET_WEBOS)
             ctm/ui_devices.c
             ctm/ui_bridge.c
             ctm/controllers/controller_common.c
+            ctm/controllers/ds5_acl_tx.c
+            ctm/controllers/ds5_hidfd.c
             ctm/controllers/controller_ds4.c
             ctm/controllers/controller_ds5.c
             ctm/controllers/controller_generic.c
