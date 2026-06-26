@@ -98,6 +98,20 @@ static void sdl_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
                     nav_to_lvgl = read_keyboard(input, &e.key, state);
                 }
             }
+        } else if (streaming_hid_panel_shown()) {
+#if TARGET_WEBOS
+            if (e.key.keysym.scancode == SDL_SCANCODE_WEBOS_BACK) {
+                bus_pushevent(USER_CLOSE_HID_PANEL, NULL, NULL);
+                back_closes_kbd = true;
+            } else
+#endif
+            {
+                SDL_Keycode sym = e.key.keysym.sym;
+                if (sym == SDLK_UP || sym == SDLK_DOWN || sym == SDLK_LEFT || sym == SDLK_RIGHT
+                    || sym == SDLK_RETURN || sym == SDLK_KP_ENTER || sym == SDLK_ESCAPE) {
+                    nav_to_lvgl = read_keyboard(input, &e.key, state);
+                }
+            }
         }
         if (!nav_to_lvgl && !back_closes_kbd && app->session != NULL && session_handle_input_event(app->session, &e)) {
             state->state = LV_INDEV_STATE_RELEASED;
@@ -178,7 +192,6 @@ static void sdl_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
                         handled_modal = true;
                         break;
                     case NAVKEY_CANCEL:
-                        read_event(&e, state);
                         if (pressed) {
                             bus_pushevent(USER_CLOSE_HID_PANEL, NULL, NULL);
                         }
@@ -353,6 +366,10 @@ static bool read_webos_key(app_ui_input_t *input, const SDL_KeyboardEvent *event
         case SDL_SCANCODE_WEBOS_BACK:
             if (streaming_soft_keyboard_shown()) {
                 bus_pushevent(USER_CLOSE_SOFT_KEYBOARD, NULL, NULL);
+                return true;
+            }
+            if (streaming_hid_panel_shown()) {
+                bus_pushevent(USER_CLOSE_HID_PANEL, NULL, NULL);
                 return true;
             }
             state->key = LV_KEY_ESC;

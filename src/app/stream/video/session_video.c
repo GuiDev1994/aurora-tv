@@ -118,6 +118,10 @@ int vdec_delegate_setup(int videoFormat, int width, int height, int redrawRate, 
     buffer_initial_size = vdec_buffer_initial_bytes();
     buffer_size = buffer_initial_size;
     buffer = malloc(buffer_size);
+    if (!buffer) {
+        commons_log_error("Session", "Failed to allocate video reassembly buffer (%zu bytes)", buffer_size);
+        return CALLBACKS_SESSION_ERROR_VDEC_ERROR;
+    }
     memset(&vdec_temp_stats, 0, sizeof(vdec_temp_stats));
     memset(&vdec_stream_info, 0, sizeof(vdec_stream_info));
     vdec_stream_format = videoFormat;

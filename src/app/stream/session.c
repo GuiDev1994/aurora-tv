@@ -1,9 +1,8 @@
 #include "app.h"
-#include "config.h"
+#include "app_settings.h"
 #include "session_priv.h"
 
 #include "stream/session.h"
-#include "app_settings.h"
 
 #include "backend/pcmanager/priv.h"
 
@@ -293,7 +292,16 @@ bool streaming_sops_supported(PDISPLAY_MODE modes, int w, int h, int fps) {
 
 void session_config_init(app_t *app, session_config_t *config, const SERVER_DATA *server,
                          const CONFIGURATION *app_config) {
-    config->stream = app_config->stream;
+    CONFIGURATION resolved = *app_config;
+    settings_reconcile_refresh_rate(&resolved);
+
+    config->stream = resolved.stream;
+    if (resolved.client_refresh_rate_x100 > 0) {
+        config->stream.clientRefreshRateX100 = resolved.client_refresh_rate_x100;
+        config->stream.fps = (resolved.client_refresh_rate_x100 + 50) / 100;
+    } else {
+        config->stream.clientRefreshRateX100 = 0;
+    }
     config->vmouse = app_config->virtual_mouse;
     config->hardware_mouse = app_config->hardware_mouse;
     config->local_audio = app_config->localaudio;
@@ -313,14 +321,6 @@ void session_config_init(app_t *app, session_config_t *config, const SERVER_DATA
     SS4S_VideoCapabilities video_cap = app->ss4s.video_cap;
     SS4S_AudioCapabilities audio_cap = app->ss4s.audio_cap;
 
-    if (app_config->client_refresh_rate_x100 > 0) {
-        /* Round to nearest (NOT floor) so stream.fps matches what vibeshine/Sunshine derive
-         * from clientRefreshRateX100 via round(x100/100). Mismatch causes vibeshine to log
-         * "clientRefreshRateX100 (11988 = 120fps) disagrees with maxFPS (119); ignoring" and
-         * fall back to the integer rate, defeating fractional-rate transmission. With round,
-         * 11988 -> stream.fps=120 and clientRefreshRateX100=11988 agree, so 119.88 is honored. */
-        config->stream.fps = (app_config->client_refresh_rate_x100 + 50) / 100;
-    }
     if (config->stream.bitrate < 0) {
         config->stream.bitrate = settings_optimal_bitrate(&video_cap, config->stream.width, config->stream.height,
                                                           config->stream.fps);
@@ -363,9 +363,6 @@ void session_config_init(app_t *app, session_config_t *config, const SERVER_DATA
      * For SDR, honor force_full_color_range if the user has enabled it. */
     config->stream.colorRange = (!app_config->hdr && app_config->force_full_color_range)
         ? COLOR_RANGE_FULL : COLOR_RANGE_LIMITED;
-    if (app_config->client_refresh_rate_x100 > 0) {
-        config->stream.clientRefreshRateX100 = app_config->client_refresh_rate_x100;
-    }
 #if FEATURE_SURROUND_SOUND
     if (audio_cap.maxChannels < CHANNEL_COUNT_FROM_AUDIO_CONFIGURATION(config->stream.audioConfiguration)) {
         switch (audio_cap.maxChannels) {

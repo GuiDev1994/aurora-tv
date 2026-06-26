@@ -7,7 +7,9 @@
 #include "hid_passthrough/hid_passthrough_manager.h"
 #include "stream/session.h"
 
+#include "util/bus.h"
 #include "util/i18n.h"
+#include "util/user_event.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -115,17 +117,13 @@ static void update_row_styles(hid_pt_panel_t *panel) {
 static void panel_update_status(hid_pt_panel_t *panel);
 static void update_device_options(hid_pt_panel_t *panel);
 
-static void panel_close(hid_pt_panel_t *panel) {
-    if (!panel) {
-        return;
-    }
-    if (panel->on_close) {
-        panel->on_close(panel->on_close_userdata);
-    }
+static void panel_request_close(hid_pt_panel_t *panel) {
+    (void) panel;
+    bus_pushevent(USER_CLOSE_HID_PANEL, NULL, NULL);
 }
 
 static void back_btn_cb(lv_event_t *e) {
-    panel_close(lv_event_get_user_data(e));
+    panel_request_close(lv_event_get_user_data(e));
 }
 
 static bool panel_item_needs_lrkey(lv_obj_t *obj)
@@ -173,7 +171,7 @@ static void control_key_cb(lv_event_t *event)
                 lv_event_stop_processing(event);
                 return;
             }
-            panel_close(panel);
+            panel_request_close(panel);
             lv_event_stop_processing(event);
             return;
         case LV_KEY_ENTER:
@@ -692,6 +690,9 @@ static void refresh_button_cb(lv_event_t *event) {
 
 static void panel_delete_cb(lv_event_t *e) {
     hid_pt_panel_t *panel = lv_event_get_user_data(e);
+    if (!panel) {
+        return;
+    }
     if (panel->refresh_timer) {
         lv_timer_del(panel->refresh_timer);
         panel->refresh_timer = NULL;

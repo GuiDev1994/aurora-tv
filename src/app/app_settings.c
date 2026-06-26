@@ -29,9 +29,60 @@ static void set_string(char **field, const char *value);
 static void set_int(int *field, const char *value);
 
 void settings_sync_refresh_rate(app_settings_t *config) {
-    if (config->client_refresh_rate_x100 > 0) {
-        config->stream.fps = (config->client_refresh_rate_x100 + 50) / 100;
+    settings_reconcile_refresh_rate(config);
+}
+
+void settings_reconcile_refresh_rate(app_settings_t *config) {
+    if (!config) {
+        return;
     }
+#if defined(TARGET_WEBOS)
+    int ntsc = settings_ntsc_refresh_rate_x100_for_fps(config->stream.fps);
+    if (ntsc > 0) {
+        config->client_refresh_rate_x100 = ntsc;
+        return;
+    }
+#endif
+    if (config->client_refresh_rate_x100 > 0) {
+        int implied = (config->client_refresh_rate_x100 + 50) / 100;
+        if (implied != config->stream.fps) {
+            config->client_refresh_rate_x100 = 0;
+#if !defined(TARGET_WEBOS)
+        } else {
+            config->stream.fps = implied;
+        }
+#else
+        }
+#endif
+    }
+}
+
+int settings_ntsc_refresh_rate_x100_for_fps(int nominal_fps)
+{
+    /* 1000/1001 × nominal_fps, rounded to centihertz (Limelight clientRefreshRateX100). */
+    switch (nominal_fps) {
+    case 30:
+        return 2997;
+    case 60:
+        return 5994;
+    case 120:
+        return 11988;
+    case 240:
+        return 23976;
+    default:
+        return 0;
+    }
+}
+
+void settings_apply_ntsc_preset_refresh(app_settings_t *config, int nominal_fps)
+{
+#if defined(TARGET_WEBOS)
+    (void) nominal_fps;
+    settings_reconcile_refresh_rate(config);
+#else
+    (void) config;
+    (void) nominal_fps;
+#endif
 }
 
 
@@ -87,6 +138,10 @@ void settings_initialize(app_settings_t *config, char *conf_dir) {
     config->hid_passthrough_port = 48054;
     config->hid_passthrough_autoplug = true;
 
+#if defined(TARGET_WEBOS)
+    settings_apply_ntsc_preset_refresh(config, config->stream.fps);
+#endif
+
     config->conf_dir = conf_dir;
     config->ini_path = path_join(conf_dir, CONF_NAME_MOONLIGHT);
     config->condb_path = path_join(conf_dir, "gamecontrollerdb.txt");
@@ -96,7 +151,7 @@ void settings_initialize(app_settings_t *config, char *conf_dir) {
 bool settings_read(app_settings_t *config) {
     int ret = ini_parse(config->ini_path, (ini_handler) settings_parse, config);
     if (ret == 0) {
-        settings_sync_refresh_rate(config);
+        settings_reconcile_refresh_rate(config);
     }
     return ret == 0;
 }
@@ -105,7 +160,7 @@ bool settings_save(app_settings_t *config) {
     if (config->ini_path == NULL) {
         return false;
     }
-    settings_sync_refresh_rate(config);
+    settings_reconcile_refresh_rate(config);
     FILE *fp = fopen(config->ini_path, "w");
     if (!fp) {
         return false;

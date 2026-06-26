@@ -10,6 +10,9 @@
 static session_t *current_session = NULL;
 
 static void connection_terminated(int errorCode) {
+    if (!current_session) {
+        return;
+    }
     if (errorCode == ML_ERROR_GRACEFUL_TERMINATION) {
         session_interrupt(current_session, false, STREAMING_INTERRUPT_HOST);
     } else {
@@ -42,6 +45,9 @@ static void connection_status_update(int status) {
 }
 
 static void connection_stage_failed(int stage, int errorCode) {
+    if (!current_session) {
+        return;
+    }
     const char *stageName = LiGetStageName(stage);
     commons_log_error("Session", "Connection failed at stage %d (%s), errorCode = %d (%s)", stage, stageName, errorCode,
                       strerror(errorCode));
@@ -51,23 +57,38 @@ static void connection_stage_failed(int stage, int errorCode) {
 
 static void connection_rumble(unsigned short controllerNumber, unsigned short lowFreqMotor,
                               unsigned short highFreqMotor) {
+    if (!current_session) {
+        return;
+    }
     app_input_gamepad_rumble(&current_session->app->input, controllerNumber, lowFreqMotor, highFreqMotor);
 }
 
 static void connection_rumble_triggers(unsigned short controllerNumber, unsigned short leftTrigger,
                                        unsigned short rightTrigger) {
+    if (!current_session) {
+        return;
+    }
     app_input_gamepad_rumble_triggers(&current_session->app->input, controllerNumber, leftTrigger, rightTrigger);
 }
 
 static void connection_set_motion_event_state(uint16_t controllerNumber, uint8_t motionType, uint16_t reportRateHz) {
+    if (!current_session) {
+        return;
+    }
     app_input_gamepad_set_motion_event_state(&current_session->app->input, controllerNumber, motionType, reportRateHz);
 }
 
 static void connection_set_controller_led(uint16_t controllerNumber, uint8_t r, uint8_t g, uint8_t b) {
+    if (!current_session) {
+        return;
+    }
     app_input_gamepad_set_controller_led(&current_session->app->input, controllerNumber, r, g, b);
 }
 
 static void connection_set_hdr(bool hdrEnabled) {
+    if (!current_session) {
+        return;
+    }
     streaming_set_hdr(current_session, hdrEnabled);
 }
 

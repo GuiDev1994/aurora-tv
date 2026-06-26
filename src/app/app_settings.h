@@ -107,6 +107,15 @@ bool settings_save(app_settings_t *config);
 /** Keep stream.fps aligned with client_refresh_rate_x100 when a fractional rate is set. */
 void settings_sync_refresh_rate(app_settings_t *config);
 
+/** webOS: apply NTSC x100 only for 30/60/120/240; drop stale x100 for 144/90/etc. */
+void settings_reconcile_refresh_rate(app_settings_t *config);
+
+/** NTSC refresh rate (Hz × 100) for a nominal FPS preset, or 0 if not mapped (e.g. 144). */
+int settings_ntsc_refresh_rate_x100_for_fps(int nominal_fps);
+
+/** On webOS, set client_refresh_rate_x100 from a preset FPS (60→5994, 120→11988, …). */
+void settings_apply_ntsc_preset_refresh(app_settings_t *config, int nominal_fps);
+
 void settings_clear(app_settings_t *config);
 
 int settings_optimal_bitrate(const SS4S_VideoCapabilities *capabilities, int w, int h, int fps);

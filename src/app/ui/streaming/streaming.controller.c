@@ -11,6 +11,8 @@
 #include "lvgl/lv_ext_utils.h"
 #include "lvgl/util/lv_app_utils.h"
 
+#include "util/bus.h"
+#include "stream/session.h"
 #include "util/user_event.h"
 #include "util/i18n.h"
 #include "logging.h"
@@ -29,6 +31,8 @@ static void toggle_vmouse(lv_event_t *event);
 static void open_hid_devices(lv_event_t *event);
 
 static void hid_panel_close_cb(void *userdata);
+
+static void stream_fragment_del_timer_cb(lv_timer_t *timer);
 
 static void hide_overlay(lv_event_t *event);
 static void hide_overlay_impl(streaming_controller_t *controller);
@@ -357,7 +361,10 @@ static void constructor(lv_fragment_t *self, void *args) {
     controller->network_test = arg->network_test;
     controller->network_test_duration = arg->network_test_duration ? arg->network_test_duration : 10;
     controller->network_test_timer = NULL;
-    app_session_begin(arg->global, &arg->uuid, &arg->app);
+    if (app_session_begin(arg->global, &arg->uuid, &arg->app) != 0) {
+        commons_log_error("Streaming", "Failed to start session");
+        lv_async_call((lv_async_cb_t) lv_fragment_del, controller);
+    }
 }
 
 static void controller_dtor(lv_fragment_t *self) {
@@ -368,8 +375,7 @@ static void controller_dtor(lv_fragment_t *self) {
     }
 #if defined(TARGET_WEBOS)
     if (fragment->hid_panel) {
-        lv_obj_del(fragment->hid_panel);
-        fragment->hid_panel = NULL;
+        hid_panel_close_cb(fragment);
     }
 #endif
     streaming_styles_reset(fragment);
@@ -427,7 +433,16 @@ static bool on_event(lv_fragment_t *self, int code, void *userdata) {
                 lv_msgbox_close(controller->progress);
                 controller->progress = NULL;
             }
-            lv_async_call((lv_async_cb_t) lv_fragment_del, controller);
+#if defined(TARGET_WEBOS)
+            if (streaming_hid_panel_shown()) {
+                hid_panel_close_cb(controller);
+            }
+#endif
+            if (streaming_errno != 0) {
+                lv_timer_create(stream_fragment_del_timer_cb, 50, controller);
+            } else {
+                lv_async_call((lv_async_cb_t) lv_fragment_del, controller);
+            }
             break;
         }
         case USER_OPEN_OVERLAY: {
@@ -599,20 +614,28 @@ static void toggle_vmouse(lv_event_t *event) {
 }
 
 #if defined(TARGET_WEBOS)
+static void stream_fragment_del_timer_cb(lv_timer_t *timer) {
+    lv_fragment_t *fragment = timer->user_data;
+    lv_timer_del(timer);
+    lv_fragment_del(fragment);
+}
+
 static void hid_panel_close_cb(void *userdata) {
     streaming_controller_t *controller = userdata;
-    if (!controller) {
+    if (!controller || !controller->hid_panel) {
         return;
     }
-    if (controller->hid_panel) {
-        lv_group_t *group = hid_passthrough_panel_get_group(controller->hid_panel);
-        if (group) {
-            app_input_remove_modal_group(&controller->global->ui.input, group);
-        }
-        lv_obj_del(controller->hid_panel);
-        controller->hid_panel = NULL;
+    lv_group_t *group = hid_passthrough_panel_get_group(controller->hid_panel);
+    if (group) {
+        app_input_remove_modal_group(&controller->global->ui.input, group);
     }
-    app_input_set_group(&controller->global->ui.input, controller->group);
+    lv_obj_t *panel = controller->hid_panel;
+    controller->hid_panel = NULL;
+    lv_obj_del(panel);
+    lv_indev_reset(NULL, NULL);
+    if (controller->group) {
+        app_input_set_group(&controller->global->ui.input, controller->group);
+    }
 }
 
 static void open_hid_devices(lv_event_t *event) {
@@ -663,7 +686,7 @@ static void on_cancel_key(lv_event_t *event) {
         soft_keyboard_close_cb(controller);
 #if defined(TARGET_WEBOS)
     } else if (streaming_hid_panel_shown()) {
-        hid_panel_close_cb(controller);
+        bus_pushevent(USER_CLOSE_HID_PANEL, NULL, NULL);
 #endif
     } else {
         hide_overlay(event);

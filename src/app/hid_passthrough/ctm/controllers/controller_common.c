@@ -1095,22 +1095,35 @@ static void xpad_stop_rumble(ctm_controller_t *c)
     (void)write(c->evdev_gamepad_fd, &play, sizeof(play));
 }
 
+/* Parse Xbox 360 wired motor bytes from a host OUT report. Returns 0 only for
+ * rumble payloads (00 08 [strong] [weak] ...). Short vendor handshakes on ep
+ * 0x05 (e.g. 01 03 02) are ignored so they are not mistaken for motors. */
+static int xpad_parse_rumble_motors(const uint8_t *payload, size_t len,
+                                    uint8_t *strong_out, uint8_t *weak_out)
+{
+    if (!payload || !strong_out || !weak_out || len < 4) {
+        return -1;
+    }
+    if (payload[0] == 0x01) {
+        return -1;
+    }
+    if (payload[0] != 0x00 || payload[1] != 0x08) {
+        return -1;
+    }
+    *strong_out = payload[2];
+    *weak_out = payload[3];
+    return 0;
+}
+
 static void xpad_apply_rumble(ctm_controller_t *c, const uint8_t *payload, size_t len)
 {
-    if (!c || c->evdev_gamepad_fd < 0 || !payload || len < 3) {
+    if (!c || c->evdev_gamepad_fd < 0 || !payload) {
         return;
     }
     uint8_t weak = 0;
     uint8_t strong = 0;
-    if (len >= 8 && payload[0] == 0x00 && payload[1] == 0x08) {
-        weak = payload[2];
-        strong = payload[3];
-    } else if (len >= 4) {
-        weak = payload[2];
-        strong = payload[3];
-    } else {
-        weak = payload[1];
-        strong = payload[2];
+    if (xpad_parse_rumble_motors(payload, len, &strong, &weak) != 0) {
+        return;
     }
 
     struct ff_effect eff;
@@ -1126,12 +1139,17 @@ static void xpad_apply_rumble(ctm_controller_t *c, const uint8_t *payload, size_
         c->xpad_ff_effect_id = eff.id;
     }
 
+    if (!weak && !strong) {
+        xpad_stop_rumble(c);
+        return;
+    }
+
     struct input_event play;
     memset(&play, 0, sizeof(play));
     gettimeofday(&play.time, NULL);
     play.type = EV_FF;
     play.code = (uint16_t)eff.id;
-    play.value = (weak || strong) ? 1 : 0;
+    play.value = 1;
     (void)write(c->evdev_gamepad_fd, &play, sizeof(play));
 }
 

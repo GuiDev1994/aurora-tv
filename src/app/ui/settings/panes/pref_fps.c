@@ -1,6 +1,7 @@
 #include "pref_fps.h"
 
 #include "app.h"
+#include "app_settings.h"
 #include "lvgl/util/lv_app_utils.h"
 
 #include "util/i18n.h"
@@ -27,6 +28,19 @@ typedef struct pref_dropdown_fps_ctx {
     uint16_t selected_index;
     bool cus_value_set;
 } pref_dropdown_fps_ctx_t;
+
+static bool pref_fps_is_custom_rate(int fps, int refresh_rate_x100)
+{
+    if (refresh_rate_x100 <= 0) {
+        return false;
+    }
+#if defined(TARGET_WEBOS)
+    if (fps > 0 && refresh_rate_x100 == settings_ntsc_refresh_rate_x100_for_fps(fps)) {
+        return false;
+    }
+#endif
+    return true;
+}
 
 lv_obj_t *pref_dropdown_fps(lv_obj_t *parent, const int *options, int max, int *value, int *refresh_rate_x100) {
     if (max <= 0) {
@@ -82,7 +96,8 @@ lv_obj_t *pref_dropdown_fps(lv_obj_t *parent, const int *options, int max, int *
     ctx->dropdown = fps_dropdown;
     ctx->selected_index = lv_dropdown_get_selected(fps_dropdown);
 
-    if (has_custom_fps || (refresh_rate_x100 != NULL && *refresh_rate_x100 > 0)) {
+    if (has_custom_fps || (refresh_rate_x100 != NULL &&
+                           pref_fps_is_custom_rate(*value, *refresh_rate_x100))) {
         if (refresh_rate_x100 != NULL && *refresh_rate_x100 > 0) {
             snprintf(ctx->custom_fps_text, sizeof(ctx->custom_fps_text), locstr("%.2f FPS (Custom)"),
                      *refresh_rate_x100 / 100.0);
@@ -114,10 +129,13 @@ void dropdown_fps_select_cb(lv_event_t *e) {
     }
     lv_dropdown_set_text(ctx->dropdown, NULL);
     if (index != ctx->num_entries - 1) {
+#if defined(TARGET_WEBOS)
+        settings_apply_ntsc_preset_refresh(app_configuration, *ctx->value_ref);
+#else
         if (ctx->refresh_rate_x100_ref != NULL) {
             *ctx->refresh_rate_x100_ref = 0;
         }
-        // Set the value directly if it's not the custom FPS option
+#endif
         return;
     }
     // Prevent the event from propagating further
