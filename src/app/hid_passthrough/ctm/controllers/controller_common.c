@@ -148,6 +148,7 @@ struct ctm_controller {
     volatile int st_transport_enet;
     volatile unsigned long st_reports_in;
     volatile unsigned long st_reports_out;
+    volatile unsigned long st_coalesced;   /* input reports dropped by per-burst coalescing */
     char st_last_event[96];
 
     uint8_t *enum_payload;           /* composite: forwarded enumeration (CTMB_MSG_ENUM) */
@@ -1334,10 +1335,23 @@ static void *composite_reader_main(void *arg)
     return NULL;
 }
 
+/* Per-burst input coalescing. The WiFi+BT combo chip starves BT scheduling under
+ * heavy stream RX, so the DS5 buffers reports across a ~16-28ms stall then flushes
+ * them back-to-back. Forwarding every stale report FIFO over usbip backlogs the
+ * game's HID input queue and adds felt latency; SDL/Moonlight only ever consumed
+ * the latest gamepad state, which is why the SDL path felt smoother. Match that:
+ * within ONE readable burst keep only the most recent report per report-id, then
+ * forward. In steady state a poll yields a single report, so this is a no-op. */
+#define CTM_COAL_MAX_IDS 6
 static void *input_thread_main(void *arg)
 {
     ctm_controller_t *c = (ctm_controller_t *)arg;
     ctl_set_rt_prio(c, "ctm-input", 12);
+    /* Allocated once (MAX_REPORT is 4096); per-thread so concurrent controllers
+     * don't share. */
+    static __thread uint8_t coal_buf[CTM_COAL_MAX_IDS][MAX_REPORT];
+    size_t  coal_len[CTM_COAL_MAX_IDS];
+    uint8_t coal_id[CTM_COAL_MAX_IDS];
     while (!c->stop) {
         struct pollfd pfds[2];
         pfds[0].fd = c->hid_fd; pfds[0].events = POLLIN; pfds[0].revents = 0;
@@ -1348,20 +1362,34 @@ static void *input_thread_main(void *arg)
         if (pfds[1].revents & POLLIN) break;
         if (pfds[0].revents & (POLLERR | POLLHUP | POLLNVAL)) break;
         if (!(pfds[0].revents & POLLIN)) continue;
+        int coal_n = 0, drained = 0;
         for (;;) {
             uint8_t buf[MAX_REPORT];
             ssize_t n = read(c->hid_fd, buf, sizeof(buf));
-            if (n > 0) {
-                if (c_send(c, CTMB_MSG_INPUT_REPORT, CTMB_FLAG_OK, c->primary_in_ep, buf, (size_t)n) != 0) {
-                    c->stop = 1;
-                    break;
-                }
-                c->st_reports_in++;
-                continue;
+            if (n <= 0) {
+                if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) break;
+                break;
             }
-            if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) break;
-            break;
+            uint8_t id = buf[0];
+            int slot = -1;
+            for (int i = 0; i < coal_n; ++i) if (coal_id[i] == id) { slot = i; break; }
+            if (slot < 0) {
+                slot = (coal_n < CTM_COAL_MAX_IDS) ? coal_n++ : (CTM_COAL_MAX_IDS - 1);
+                coal_id[slot] = id;
+            }
+            memcpy(coal_buf[slot], buf, (size_t)n);
+            coal_len[slot] = (size_t)n;
+            drained++;
         }
+        for (int i = 0; i < coal_n && !c->stop; ++i) {
+            if (c_send(c, CTMB_MSG_INPUT_REPORT, CTMB_FLAG_OK, c->primary_in_ep,
+                       coal_buf[i], coal_len[i]) != 0) {
+                c->stop = 1;
+                break;
+            }
+            c->st_reports_in++;
+        }
+        if (drained > coal_n) c->st_coalesced += (unsigned long)(drained - coal_n);
     }
     return NULL;
 }
@@ -1577,7 +1605,21 @@ static void run_session(ctm_controller_t *c, const ctmb_device_caps_t *caps,
 
     int link_alive = 1;
     while (!c->stop && link_alive) {
-        drain_paced(c, paced_q, &paced_head, &paced_count, &next_paced_us, host_cfg.bt_pace_us);
+        /* The ~10.6ms host pace (~94/s) was sized for the BT one-outstanding wall
+         * on the hidraw write path. The raw-ACL injector bypasses that wall, but at
+         * ~94/s the pace barely lags the ~100/s DS5 audio source, so the paced queue
+         * parks near-full (up to PACED_QUEUE_CAP*pace ~= 340ms of feedback latency).
+         * While the forwarder is actively injecting, tighten the pace to <=8ms so the
+         * queue drains with margin and stays shallow; the hidraw fallback keeps the
+         * conservative host pace. */
+        uint32_t eff_pace_us = host_cfg.bt_pace_us;
+        if (c->acl_tx) {
+            long ij_ = 0, dp_ = 0;
+            int rdy_ = 0;
+            ds5_acl_tx_stats(c->acl_tx, &ij_, &dp_, &rdy_);
+            if (rdy_ && eff_pace_us > 8000) eff_pace_us = 8000;
+        }
+        drain_paced(c, paced_q, &paced_head, &paced_count, &next_paced_us, eff_pace_us);
         if (c->plc_enabled) {
             uint64_t pnow = now_us();
             if (c->plc_log_next_us == 0) {
@@ -1588,10 +1630,10 @@ static void run_session(ctm_controller_t *c, const ctmb_device_caps_t *caps,
                 if (c->acl_tx) {
                     ds5_acl_tx_stats(c->acl_tx, &inj, &drp, &rdy);
                 }
-                ctl_log(c, "PLC/60s: audio_omit=%lu conceal=%lu capdrop=%lu | acl_ready=%d inj=%ld drop=%ld | hid ok=%lu eagain=%lu recov=%lu drop=%lu | dedup31=%lu",
+                ctl_log(c, "PLC/60s: audio_omit=%lu conceal=%lu capdrop=%lu | acl_ready=%d inj=%ld drop=%ld | hid ok=%lu eagain=%lu recov=%lu drop=%lu | dedup31=%lu | in=%lu coal=%lu",
                         c->st_audio_omit, c->st_audio_conceal, c->st_audio_capdrop, rdy, inj, drp,
                         c->st_hid_ok, c->st_hid_eagain, c->st_hid_recovered, c->st_hid_dropped,
-                        c->st_dedup_skipped);
+                        c->st_dedup_skipped, c->st_reports_in, c->st_coalesced);
                 c->st_audio_omit = c->st_audio_conceal = c->st_audio_capdrop = 0;
                 c->st_hid_ok = c->st_hid_eagain = c->st_hid_recovered = c->st_hid_dropped = 0;
                 c->st_dedup_skipped = 0;

@@ -191,6 +191,7 @@ lv_obj_t *streaming_scene_create(lv_fragment_t *self, lv_obj_t *parent) {
         controller->stats_items.bitrate = NULL;
         controller->stats_items.host_latency = NULL;
         controller->stats_items.vdec_latency = NULL;
+        controller->stats_items.battery = NULL;
     } else {
         lv_obj_set_size(stats, LV_DPX(384), LV_SIZE_CONTENT);
         lv_obj_set_flex_flow(stats, LV_FLEX_FLOW_ROW_WRAP);
@@ -208,6 +209,7 @@ lv_obj_t *streaming_scene_create(lv_fragment_t *self, lv_obj_t *parent) {
         controller->stats_items.bitrate = stat_label(stats, "Bitrate");
         controller->stats_items.host_latency = stat_label(stats, "Host processing latency");
         controller->stats_items.vdec_latency = stat_label(stats, "Decoder latency");
+        controller->stats_items.battery = stat_label(stats, "Controller battery");
     }
 
 

@@ -20,6 +20,13 @@
 #include <stdio.h>
 #include <string.h>
 
+#if defined(TARGET_WEBOS)
+#include <fcntl.h>
+#include <unistd.h>
+#include <poll.h>
+#include "hid_passthrough/hid_passthrough_manager.h"
+#endif
+
 static void exit_streaming(lv_event_t *event);
 
 static void suspend_streaming(lv_event_t *event);
@@ -217,6 +224,148 @@ bool streaming_stats_shown() {
     return overlay_showing || overlay_pinned;
 }
 
+#if defined(TARGET_WEBOS)
+/* Sony DualSense family — the only controllers whose battery byte lives at the
+ * fixed offset decoded below. DS4/Xbox/puck use different layouts, so we skip them. */
+#define DS_VENDOR_SONY  0x054c
+#define DS_PRODUCT_DS5  0x0ce6
+#define DS_PRODUCT_EDGE 0x0df2
+
+/* The DualSense `status` byte sits at offset 52 of the common input-report struct.
+ * The report is prefixed by the report id plus, over Bluetooth, a 1-byte seq tag:
+ * +2 for BT report 0x31, +1 for USB report 0x01. Returns capacity 0..100 (and the
+ * charging nibble), or -1 when the report id/length is not a full DualSense report. */
+static int ds5_parse_battery(const uint8_t *buf, int len, int *charging) {
+    int off;
+    if (buf[0] == 0x31) {
+        off = 2 + 52; /* Bluetooth full report */
+    } else if (buf[0] == 0x01) {
+        off = 1 + 52; /* USB full report */
+    } else {
+        return -1;
+    }
+    if (len <= off) {
+        return -1;
+    }
+    uint8_t status = buf[off];
+    int raw = status & 0x0f;        /* 0..10 capacity, or an error code (>10) */
+    int chg = (status >> 4) & 0x0f; /* 0 discharging, 1 charging, 2 full */
+    if (charging) {
+        *charging = chg;
+    }
+    if (chg == 0x02) {
+        return 100; /* fully charged */
+    }
+    if (raw > 10) {
+        return -1; /* temperature/voltage error code, not a real level */
+    }
+    int pct = raw * 10 + 5;
+    return pct > 100 ? 100 : pct;
+}
+
+/* Read one input report off a bridged DualSense hidraw node and decode its battery.
+ * The kernel fans each hidraw report out to every open fd, so this read does NOT
+ * steal frames from the usbip passthrough that also holds the node open. */
+static int ds5_read_battery_node(const char *node, int *charging) {
+    int fd = open(node, O_RDONLY | O_NONBLOCK);
+    if (fd < 0) {
+        return -1;
+    }
+    int result = -1;
+    /* DualSense streams ~250 reports/s; poll briefly for a fresh one (~100ms cap). */
+    for (int tries = 0; tries < 8 && result < 0; tries++) {
+        struct pollfd p = {fd, POLLIN, 0};
+        if (poll(&p, 1, 12) <= 0) {
+            continue;
+        }
+        uint8_t buf[96];
+        int n = (int) read(fd, buf, sizeof(buf));
+        if (n <= 0) {
+            continue;
+        }
+        result = ds5_parse_battery(buf, n, charging);
+    }
+    close(fd);
+    return result;
+}
+
+/* Summarize the battery of every bridged DualSense into out, e.g.
+ * "75%  ·  40% (charging)" — one entry per controller in device-index order.
+ * Returns the number of controllers whose battery was decoded (0 = none). */
+static int ds5_bridged_battery_summary(streaming_controller_t *controller, char *out, size_t outlen) {
+    if (outlen) {
+        out[0] = '\0';
+    }
+    if (!controller->global || !controller->global->session) {
+        return 0;
+    }
+    hid_passthrough_manager_t *mgr = session_get_hid_passthrough(controller->global->session);
+    if (!mgr) {
+        return 0;
+    }
+    int count = hid_passthrough_manager_device_count(mgr);
+    int found = 0;
+    size_t pos = 0;
+    for (int i = 0; i < count; i++) {
+        hid_pt_device_info_t info;
+        if (hid_passthrough_manager_get_device(mgr, i, &info) != 0) {
+            continue;
+        }
+        if (!info.plugged || info.vendor_id != DS_VENDOR_SONY) {
+            continue;
+        }
+        if (info.product_id != DS_PRODUCT_DS5 && info.product_id != DS_PRODUCT_EDGE) {
+            continue;
+        }
+        if (!info.path[0]) {
+            continue;
+        }
+        int chg = 0;
+        int pct = ds5_read_battery_node(info.path, &chg);
+        if (pct < 0) {
+            continue;
+        }
+        const char *suffix = (chg == 0x01) ? " (charging)"
+                           : (chg == 0x02 || pct >= 100) ? " (full)" : "";
+        int w = snprintf(out + pos, outlen - pos, "%s%d%%%s",
+                         found ? "  \xc2\xb7  " : "", pct, suffix);
+        if (w > 0 && (size_t) w < outlen - pos) {
+            pos += (size_t) w;
+        }
+        found++;
+    }
+    return found;
+}
+#endif
+
+/* Refresh the "Controller battery" stat row. The hidraw reads are throttled to once
+ * per 10s (battery changes slowly) so reopening the nodes never janks the overlay.
+ * Shows every bridged DualSense, e.g. "75%  ·  40% (charging)". */
+static void streaming_refresh_battery(streaming_controller_t *controller) {
+    if (!controller->stats_items.battery) {
+        return;
+    }
+#if defined(TARGET_WEBOS)
+    static uint32_t last_ms = 0;
+    static int initialized = 0;
+    static char text[96];
+    uint32_t now = SDL_GetTicks();
+    if (!initialized || (now - last_ms) >= 10000) {
+        char summary[96];
+        if (ds5_bridged_battery_summary(controller, summary, sizeof summary) <= 0) {
+            snprintf(text, sizeof text, "no controller bridged");
+        } else {
+            snprintf(text, sizeof text, "%s", summary);
+        }
+        last_ms = now;
+        initialized = 1;
+    }
+    lv_label_set_text(controller->stats_items.battery, text);
+#else
+    lv_label_set_text(controller->stats_items.battery, "-");
+#endif
+}
+
 bool streaming_refresh_stats() {
     streaming_controller_t *controller = current_controller;
     if (!controller) { return false; }
@@ -334,6 +483,7 @@ bool streaming_refresh_stats() {
         lv_label_set_text_fmt(controller->stats_items.host_latency, "-");
         lv_label_set_text_fmt(controller->stats_items.vdec_latency, "-");
     }
+    streaming_refresh_battery(controller);
     return true;
 }
 
