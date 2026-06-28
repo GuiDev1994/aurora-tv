@@ -1577,7 +1577,21 @@ static void run_session(ctm_controller_t *c, const ctmb_device_caps_t *caps,
 
     int link_alive = 1;
     while (!c->stop && link_alive) {
-        drain_paced(c, paced_q, &paced_head, &paced_count, &next_paced_us, host_cfg.bt_pace_us);
+        /* The ~10.6ms host pace (~94/s) was sized for the BT one-outstanding wall
+         * on the hidraw write path. The raw-ACL injector bypasses that wall, but at
+         * ~94/s the pace barely lags the ~100/s DS5 audio source, so the paced queue
+         * parks near-full (up to PACED_QUEUE_CAP*pace ~= 340ms of feedback latency).
+         * While the forwarder is actively injecting, tighten the pace to <=8ms so the
+         * queue drains with margin and stays shallow; the hidraw fallback keeps the
+         * conservative host pace. */
+        uint32_t eff_pace_us = host_cfg.bt_pace_us;
+        if (c->acl_tx) {
+            long ij_ = 0, dp_ = 0;
+            int rdy_ = 0;
+            ds5_acl_tx_stats(c->acl_tx, &ij_, &dp_, &rdy_);
+            if (rdy_ && eff_pace_us > 8000) eff_pace_us = 8000;
+        }
+        drain_paced(c, paced_q, &paced_head, &paced_count, &next_paced_us, eff_pace_us);
         if (c->plc_enabled) {
             uint64_t pnow = now_us();
             if (c->plc_log_next_us == 0) {
