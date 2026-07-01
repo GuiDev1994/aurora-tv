@@ -17,6 +17,7 @@
 #define USER_OPEN_SOFT_KEYBOARD 533
 #define USER_TOGGLE_STATS_PIN 534
 #define USER_CLOSE_HID_PANEL 535
+#define USER_APP_FOREGROUND 536
 
 
 extern unsigned int app_userevent_remotebutton;
