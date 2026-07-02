@@ -1,6 +1,8 @@
 #include "app.h"
 #include "app_launch.h"
 
+#include "stream/session.h"
+
 #include "add.dialog.h"
 #include "apps.controller.h"
 #include "launcher.controller.h"
@@ -58,6 +60,8 @@ static void open_help(lv_event_t *event);
 static void select_pc(launcher_fragment_t *controller, const uuidstr_t *uuid);
 
 static void launcher_try_auto_resume(launcher_fragment_t *controller, const uuidstr_t *uuid);
+
+static void launcher_handle_app_foreground(launcher_fragment_t *controller);
 
 /* Switch the active focus group between top-bar and detail (game rail).
  * Replaces the old "set_detail_opened" semantics now that both areas are visible
@@ -237,6 +241,8 @@ static bool launcher_event_cb(lv_fragment_t *self, int code, void *userdata) {
     launcher_fragment_t *fragment = (launcher_fragment_t *) self;
     if (code == USER_SIZE_CHANGED) {
         lv_obj_set_size(self->obj, fragment->global->ui.width, fragment->global->ui.height);
+    } else if (code == USER_APP_FOREGROUND) {
+        launcher_handle_app_foreground(fragment);
     }
     return false;
 }
@@ -318,6 +324,30 @@ static void launcher_try_auto_resume(launcher_fragment_t *controller, const uuid
     // teardown unregisters a pcmanager listener — unsafe while iterating listeners
     // inside the notify() that called us.
     lv_async_call(launcher_auto_resume_async, controller);
+}
+
+// Handle a background->foreground transition (USER_APP_FOREGROUND). The cold-start
+// auto-resume is one-shot (auto_resume_done), so without this the resume never fires
+// when Aurora stays alive in the background and the user switches back to it on the TV.
+static void launcher_handle_app_foreground(launcher_fragment_t *controller) {
+    if (!app_configuration->autoresume) { return; }
+    // If a stream is already live (the foreground event raced ahead of teardown, or we
+    // never actually left the stream), there is nothing to resume — and re-arming the
+    // guard here would let a periodic host update spuriously relaunch over the session.
+    if (session_is_streaming(controller->global->session)) { return; }
+    // Re-arm the one-shot guard so this foreground transition can auto-resume again.
+    // This is safe w.r.t. the manual-quit footgun: quitting a stream is in-app
+    // navigation and never emits USER_APP_FOREGROUND, so the guard is only re-armed on a
+    // genuine background->foreground switch (e.g. webOS Home -> back to Aurora).
+    controller->auto_resume_done = false;
+    // Force a fresh query of the selected host; the resulting on_pc_updated re-attempts
+    // auto-resume (via launcher_try_auto_resume) with up-to-date currentGame info.
+    for (const pclist_t *cur = pcmanager_servers(pcmanager); cur != NULL; cur = cur->next) {
+        if (cur->selected) {
+            pcmanager_request_update(pcmanager, &cur->id, NULL, NULL);
+            break;
+        }
+    }
 }
 
 static void cb_detail_focused(lv_event_t *event) {

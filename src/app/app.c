@@ -145,6 +145,13 @@ static int app_event_filter(void *userdata, SDL_Event *event) {
         }
         case SDL_APP_DIDENTERFOREGROUND: {
             lv_obj_invalidate(lv_scr_act());
+            /* Re-arm auto-resume on a genuine background->foreground transition. The
+             * cold-start auto-resume is one-shot; switching away and back to Aurora on
+             * the TV (while it stays alive in the background) must give the launcher
+             * another chance to resume a still-running host app. An in-app stream quit
+             * does NOT emit this event, so the "don't instantly re-resume after quit"
+             * guard stays intact. The launcher does all gating (see launcher.controller). */
+            bus_pushevent(USER_APP_FOREGROUND, NULL, NULL);
             break;
         }
         case SDL_WINDOWEVENT: {
