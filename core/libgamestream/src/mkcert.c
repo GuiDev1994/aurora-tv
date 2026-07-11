@@ -64,8 +64,20 @@ static int mkcert_generate_impl(mbedtls_pk_context *key, mbedtls_x509write_cert 
     mbedtls_mpi_read_string(&serial, 10, "1");
     mbedtls_x509write_crt_set_serial(crt, &serial);
 
-    mbedtls_x509write_crt_set_version(crt, MBEDTLS_X509_CRT_VERSION_2);
+    // Use X.509 v3 so that extensions (keyUsage) are supported.
+    // Modern NVIDIA host apps require a v3 client cert during mTLS pairing;
+    // a v2 cert causes a cURL SSL connection error.
+    mbedtls_x509write_crt_set_version(crt, MBEDTLS_X509_CRT_VERSION_3);
     mbedtls_x509write_crt_set_md_alg(crt, MBEDTLS_MD_SHA256);
+
+    // Declare the cert's intended use explicitly, required by strict TLS stacks.
+    if ((ret = mbedtls_x509write_crt_set_key_usage(crt,
+            MBEDTLS_X509_KU_DIGITAL_SIGNATURE | MBEDTLS_X509_KU_KEY_ENCIPHERMENT)) != 0) {
+        mbedtls_strerror(ret, buf, 512);
+        ret = gs_set_error(GS_FAILED, "mbedtls_x509write_crt_set_key_usage returned -0x%04x - %s",
+                           (unsigned int) -ret, buf);
+        goto finally;
+    }
 
     time_t now;
     time(&now);

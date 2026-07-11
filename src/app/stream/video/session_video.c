@@ -64,6 +64,9 @@ static bool need_idr_on_resume = false;
 static struct VIDEO_STATS vdec_temp_stats;
 static int vdec_stream_format = 0;
 static bool vdec_warned_near_buffer_limit;
+/* Set once per stream after the first successful feed, so SS4S_PlayerVideoSetHDRInfo is only
+ * called once the video sink actually exists (a no-op on webOS before then). */
+static bool vdec_hdr_notified;
 VIDEO_STATS vdec_summary_stats;
 /* Seqlock for vdec_summary_stats: odd while vdec_stat_submit is mid-write. */
 static unsigned vdec_stats_seq;
@@ -225,6 +228,7 @@ int vdec_delegate_setup(int videoFormat, int width, int height, int redrawRate, 
     memset(&vdec_stream_info, 0, sizeof(vdec_stream_info));
     vdec_stream_format = videoFormat;
     vdec_stream_info.format = video_format_name(videoFormat);
+    vdec_hdr_notified = false;
     lastFrameNumber = 0;
     need_idr_on_resume = false;
     frames_since_idr = 0;
@@ -308,6 +312,13 @@ void vdec_delegate_cleanup(void) {
 
 static int vdec_finish_feed(SS4S_VideoFeedResult result, PDECODE_UNIT decodeUnit) {
     if (result == SS4S_VIDEO_FEED_OK) {
+        /* Some GameStream-compatible hosts (e.g. punktfunk) never send the async HDR_INFO
+         * control message Sunshine uses to confirm HDR; the negotiated format already tells
+         * us HDR was agreed on, so apply it here once the video sink is confirmed alive. */
+        if (!vdec_hdr_notified && (vdec_stream_format & VIDEO_FORMAT_MASK_10BIT)) {
+            vdec_hdr_notified = true;
+            streaming_set_hdr(session, true);
+        }
         if (decodeUnit->frameType == FRAME_TYPE_IDR) {
             frames_since_idr = 0;
         } else {
