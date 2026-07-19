@@ -6,7 +6,7 @@
     "main": "bin/aurora",
     "title": "Aurora",
     "icon": "icon.png",
-    "iconColor": "#ffffff",
+    "iconColor": "#000618",
     "largeIcon": "icon_large.png",
     "splashBackground": "splash.png",
     "dialAppName": "Aurora",
