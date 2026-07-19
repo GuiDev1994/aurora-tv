@@ -160,8 +160,16 @@ int vdec_delegate_setup(int videoFormat, int width, int height, int redrawRate, 
     memset(&info, 0, sizeof(info));
     info.width = width;
     info.height = height;
-    info.frameRateNumerator = vdec_stream_target_fps;
-    info.frameRateDenominator = 1;
+    /* Prefer host fractional refresh (e.g. 11988/100) for Starfish maxFrameRate / smooth
+     * pacing so the decoder grid matches NTSC clientRefreshRateX100 when set. */
+    if (session != NULL && session->config.stream.clientRefreshRateX100 > 0 &&
+        (session->config.stream.clientRefreshRateX100 % 100) != 0) {
+        info.frameRateNumerator = session->config.stream.clientRefreshRateX100;
+        info.frameRateDenominator = 100;
+    } else {
+        info.frameRateNumerator = vdec_stream_target_fps;
+        info.frameRateDenominator = 1;
+    }
     switch (videoFormat) {
         case VIDEO_FORMAT_H264:
             info.codec = SS4S_VIDEO_H264;
