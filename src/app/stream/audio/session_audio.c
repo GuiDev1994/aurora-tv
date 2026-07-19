@@ -29,11 +29,29 @@ static int aud_init(int audioConfiguration, const POPUS_MULTISTREAM_CONFIGURATIO
     player = session->player;
     SS4S_AudioCodec codec = SS4S_AUDIO_PCM_S16LE;
     size_t codecDataLen = 0;
+
+    OPUS_MULTISTREAM_CONFIGURATION config_copy = *opusConfig;
+
+    // Swap channels for 5.1 surround sound because the Moonlight library normalizes to
+    // FL, FR, Center, LFE, RL, RR but WebOS hardware expects FL, FR, RL, RR, Center, LFE.
+    if (config_copy.channelCount == 6) {
+        unsigned char tmp;
+        // Swap Front Center (2) <-> Rear/Surround Left (4)
+        tmp = config_copy.mapping[2];
+        config_copy.mapping[2] = config_copy.mapping[4];
+        config_copy.mapping[4] = tmp;
+
+        // Swap Subwoofer/LFE (3) <-> Rear/Surround Right (5)
+        tmp = config_copy.mapping[3];
+        config_copy.mapping[3] = config_copy.mapping[5];
+        config_copy.mapping[5] = tmp;
+    }
+
     SS4S_AudioInfo info = {
-            .numOfChannels = opusConfig->channelCount,
+            .numOfChannels = config_copy.channelCount,
             .appName = "Aurora",
             .streamName = "Streaming",
-            .sampleRate = opusConfig->sampleRate,
+            .sampleRate = config_copy.sampleRate,
             .samplesPerFrame = SAMPLES_PER_FRAME,
     };
     if (session->audio_cap.codecs & SS4S_AUDIO_OPUS && SS4S_GetAudioPreferredCodecs(&info) & SS4S_AUDIO_OPUS) {
@@ -44,16 +62,16 @@ static int aud_init(int audioConfiguration, const POPUS_MULTISTREAM_CONFIGURATIO
             commons_log_error("Session", "Audio init: failed to allocate codec data buffer");
             return -1;
         }
-        codecDataLen = opus_head_serialize(opusConfig, buffer);
+        codecDataLen = opus_head_serialize(&config_copy, buffer);
     } else {
         int rc;
-        decoder = opus_multistream_decoder_create(opusConfig->sampleRate, opusConfig->channelCount, opusConfig->streams,
-                                                  opusConfig->coupledStreams, opusConfig->mapping, &rc);
+        decoder = opus_multistream_decoder_create(config_copy.sampleRate, config_copy.channelCount, config_copy.streams,
+                                                  config_copy.coupledStreams, config_copy.mapping, &rc);
         if (rc != 0) {
             return rc;
         }
-        frame_size = opusConfig->samplesPerFrame;
-        unit_size = (int) (opusConfig->channelCount * sizeof(int16_t));
+        frame_size = config_copy.samplesPerFrame;
+        unit_size = (int) (config_copy.channelCount * sizeof(int16_t));
         buffer = calloc(unit_size, frame_size);
         if (buffer == NULL) {
             commons_log_error("Session", "Audio init: failed to allocate decode buffer");
