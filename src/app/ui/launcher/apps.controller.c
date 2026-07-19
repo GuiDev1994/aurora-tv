@@ -647,8 +647,18 @@ static void appload_errored(int code, const char *error, void *userdata) {
 static void appitem_bind(apps_fragment_t *controller, lv_obj_t *item, apploader_item_t *app) {
     appitem_viewholder_t *holder = lv_obj_get_user_data(item);
 
-    coverloader_display(controller->coverloader, &controller->uuid, app->base.id, item,
-                        controller->col_width, controller->col_height);
+    /* lv_gridview's fill_rows() rebinds every visible tile on every single
+     * lv_gridview_set_data_advanced() call, including when the view wasn't
+     * recycled and is already showing this exact app (e.g. every ~10s poll
+     * that finds nothing changed). coverloader_display() unconditionally
+     * cancels any in-flight load and kicks off a new one, which redraws the
+     * cover art even when it's already correct -- that's what caused the
+     * cover art to visibly flicker on every poll. Skip it when this view is
+     * already displaying the right app's cover. */
+    if (holder->app_id != app->base.id) {
+        coverloader_display(controller->coverloader, &controller->uuid, app->base.id, item,
+                            controller->col_width, controller->col_height);
+    }
     lv_label_set_text(holder->title, app->base.name);
 
     int current_id = pcmanager_server_current_app(pcmanager, &controller->uuid);
@@ -928,7 +938,13 @@ static lv_gridview_data_change_t *apps_list_detect_change(const apploader_list_t
                                                           const apploader_list_t *new_list, int *num_changes) {
     if (old_list == NULL && new_list == NULL) {
         *num_changes = 0;
-        return NULL;
+        /* Must be non-NULL: lv_gridview_set_data_advanced() treats a NULL
+         * changes pointer as "invalidate everything" regardless of
+         * num_changes (see its `changes == NULL || num_changes < 0` check),
+         * so a genuinely-empty change set still needs a real (if unused)
+         * pointer to avoid a full, unnecessary grid rebuild. Freed by the
+         * caller. */
+        return calloc(1, sizeof(lv_gridview_data_change_t));
     } else if ((old_list != NULL) != (new_list != NULL)) {
         *num_changes = -1;
         return NULL;
@@ -943,7 +959,12 @@ static lv_gridview_data_change_t *apps_list_detect_change(const apploader_list_t
         }
     }
     *num_changes = 0;
-    return NULL;
+    /* Non-NULL sentinel -- see comment above. num_changes=0 means the widget
+     * never iterates this array, but it must not be NULL or the widget will
+     * still fully recycle and rebuild every visible tile on every poll (the
+     * cause of the cover art flickering on every ~10s refresh), even when
+     * nothing actually changed. */
+    return calloc(1, sizeof(lv_gridview_data_change_t));
 }
 
 static int apps_raw_visible_count(apps_fragment_t *controller, apploader_list_t *list) {
