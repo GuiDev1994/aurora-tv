@@ -571,6 +571,19 @@ static void focus_detail(launcher_fragment_t *controller) {
                     index = 0;
                 }
                 lv_gridview_focus(cur, index);
+                /* lv_gridview_focus() sends its FOCUSED event via
+                 * lv_indev_get_act(), which is NULL here (this is a
+                 * programmatic focus-route, not a real keypress) -- LVGL's
+                 * own event handler only applies LV_STATE_FOCUS_KEY for a
+                 * genuine keypad/encoder indev, so the tile ends up
+                 * "focused" internally (grid->focused_index is correct) but
+                 * visually shows no selection outline at all. Force the
+                 * state directly, same as the non-gridview branch below
+                 * already does. */
+                lv_obj_t *focused_item = lv_gridview_get_item_view(cur, index);
+                if (focused_item) {
+                    lv_obj_add_state(focused_item, LV_STATE_FOCUS_KEY);
+                }
             } else {
                 lv_obj_add_state(cur, LV_STATE_FOCUS_KEY);
             }
