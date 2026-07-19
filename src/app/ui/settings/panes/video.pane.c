@@ -168,6 +168,12 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
                            "wall-clock feed time. Reduces hitching when camera pans at high bitrate "
                            "(e.g. 3.6K HDR HEVC). Disable only for A/B comparison."),
                     false);
+    pref_checkbox(view, locstr("Pause at decode time (Starfish)"), &app_configuration->pause_at_decode_time, false);
+    pref_desc_label(view,
+                    locstr("Starfish Load flag pauseAtDecodeTime. Leave enabled for normal pacing. "
+                           "Disable only to experiment with lower decode scheduling latency "
+                           "(may increase judder on irregular arrival)."),
+                    false);
 #endif
 
     pref_header(view, locstr("Color"));

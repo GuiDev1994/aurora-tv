@@ -127,9 +127,11 @@ void testDefaultNtscAndSmoothFlags() {
     TEST_ASSERT_FALSE(settings.use_ntsc_refresh);
 #if defined(TARGET_WEBOS)
     TEST_ASSERT_TRUE(settings.smooth_frame_pacing);
+    TEST_ASSERT_TRUE(settings.pause_at_decode_time);
     TEST_ASSERT_EQUAL_INT(0, settings.client_refresh_rate_x100);
 #else
     TEST_ASSERT_FALSE(settings.smooth_frame_pacing);
+    TEST_ASSERT_TRUE(settings.pause_at_decode_time);
 #endif
 }
 

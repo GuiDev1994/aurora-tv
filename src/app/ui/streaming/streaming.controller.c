@@ -219,8 +219,18 @@ bool streaming_refresh_stats() {
                 first = false;
             }
             if (have_encode && len > 0 && (size_t) len < sizeof(stats_line)) {
+                len += snprintf(stats_line + len, sizeof(stats_line) - (size_t) len,
+                                "%sEn %.1fms", first ? "" : " \xb7 ", hostMs);
+                first = false;
+            }
+            (void) first;
+        }
+        if (len > 0 && (size_t) len < sizeof(stats_line)) {
+            if (vdec_stream_info.has_render_queue && dst->videoRenderQueue >= 0) {
                 snprintf(stats_line + len, sizeof(stats_line) - (size_t) len,
-                         "%sEn %.1fms", first ? "" : " \xb7 ", hostMs);
+                         " | RQ %d", dst->videoRenderQueue);
+            } else {
+                snprintf(stats_line + len, sizeof(stats_line) - (size_t) len, " | RQ -");
             }
         }
         lv_label_set_text(controller->stats_compact_label, stats_line);
@@ -267,10 +277,20 @@ bool streaming_refresh_stats() {
             } else {
                 lv_label_set_text_fmt(controller->stats_items.vdec_latency, "not available");
             }
+            if (controller->stats_items.render_queue) {
+                if (vdec_stream_info.has_render_queue && dst->videoRenderQueue >= 0) {
+                    lv_label_set_text_fmt(controller->stats_items.render_queue, "%d", dst->videoRenderQueue);
+                } else {
+                    lv_label_set_text(controller->stats_items.render_queue, "not available");
+                }
+            }
     } else {
         lv_label_set_text(controller->stats_items.drop_rate, "-");
         lv_label_set_text_fmt(controller->stats_items.host_latency, "-");
         lv_label_set_text_fmt(controller->stats_items.vdec_latency, "-");
+        if (controller->stats_items.render_queue) {
+            lv_label_set_text(controller->stats_items.render_queue, "-");
+        }
     }
     streaming_refresh_battery(controller);
     return true;

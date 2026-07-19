@@ -72,6 +72,11 @@ typedef struct app_settings_t {
      * When enabled, host presentationTimeUs is mapped into the player PTS when available.
      */
     bool smooth_frame_pacing;
+    /**
+     * webOS SMP/Starfish: pass pauseAtDecodeTime in Load payload (default true).
+     * Independent of smooth_frame_pacing (PTS grid). Set false only for latency experiments.
+     */
+    bool pause_at_decode_time;
     bool auto_adjust_bitrate;
     int abr_mode;
     char *conf_dir;
