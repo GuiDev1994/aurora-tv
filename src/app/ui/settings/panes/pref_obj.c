@@ -79,8 +79,12 @@ lv_obj_t *pref_checkbox(lv_obj_t *parent, const char *title, bool *value, bool r
     attrs->checkbox.ref = value;
     attrs->checkbox.reverse = reverse;
     lv_obj_clear_flag(checkbox, LV_OBJ_FLAG_CHECKABLE);
+    /* LVGL's keypad/encoder input handling already synthesizes a CLICKED event
+     * when a focused object receives an ENTER key release (see indev_keypad_proc
+     * in lv_indev.c), so listening on LV_EVENT_KEY here as well double-fires
+     * the toggle for a single remote OK press. CLICKED alone covers both touch
+     * and remote/keypad activation. */
     lv_obj_add_event_cb(checkbox, pref_checkable_activate, LV_EVENT_CLICKED, attrs);
-    lv_obj_add_event_cb(checkbox, pref_checkable_activate, LV_EVENT_KEY, attrs);
     lv_obj_add_event_cb(checkbox, pref_attrs_free, LV_EVENT_DELETE, attrs);
     if (*value ^ reverse) {
         lv_obj_add_state(checkbox, LV_STATE_CHECKED);
@@ -260,11 +264,7 @@ static void pref_checkable_value_write_back(lv_event_t *event) {
 }
 
 static bool pref_checkable_is_activate_event(lv_event_t *event) {
-    lv_event_code_t code = lv_event_get_code(event);
-    if (code == LV_EVENT_CLICKED) {
-        return true;
-    }
-    return code == LV_EVENT_KEY && lv_event_get_key(event) == LV_KEY_ENTER;
+    return lv_event_get_code(event) == LV_EVENT_CLICKED;
 }
 
 static void pref_checkable_activate(lv_event_t *event) {

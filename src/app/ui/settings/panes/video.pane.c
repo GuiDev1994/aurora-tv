@@ -153,8 +153,10 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
                "Off by default; use 10–30 s if you see blockiness or color smearing. Minimum 0.5 s."),
         false);
     controller->idr_refresh_hint = idr_hint;
+    /* LVGL already synthesizes a CLICKED event for a focused object on ENTER
+     * key release (see indev_keypad_proc in lv_indev.c), so also listening on
+     * LV_EVENT_KEY here double-fires the toggle for one remote OK press. */
     lv_obj_add_event_cb(idr_checkbox, idr_checkbox_activate, LV_EVENT_CLICKED, controller);
-    lv_obj_add_event_cb(idr_checkbox, idr_checkbox_activate, LV_EVENT_KEY, controller);
     lv_obj_add_event_cb(idr_slider, idr_refresh_slider_cb, LV_EVENT_VALUE_CHANGED, controller);
     lv_obj_add_event_cb(hevc_checkbox, idr_refresh_hevc_cb, LV_EVENT_VALUE_CHANGED, controller);
     idr_refresh_state_update(controller);
@@ -253,11 +255,7 @@ static void idr_refresh_state_update(video_pane_t *controller) {
 }
 
 static void idr_checkbox_activate(lv_event_t *e) {
-    lv_event_code_t code = lv_event_get_code(e);
-    if (code == LV_EVENT_KEY && lv_event_get_key(e) != LV_KEY_ENTER) {
-        return;
-    }
-    if (code != LV_EVENT_CLICKED && code != LV_EVENT_KEY) {
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
         return;
     }
     lv_obj_t *cb = lv_event_get_current_target(e);
