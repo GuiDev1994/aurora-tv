@@ -7,6 +7,7 @@
 #include "lvgl.h"
 #include "lvgl/util/lv_app_utils.h"
 #include "lvgl/font/material_icons_regular_symbols.h"
+#include "lvgl/theme/lv_theme_moonlight.h"
 
 #include "util/i18n.h"
 
@@ -128,11 +129,22 @@ void server_popup_open(launcher_fragment_t *controller) {
         const SERVER_DATA *server = cur->server;
         if (server == NULL) { continue; }
         const char *icon = server_popup_item_icon(cur);
-        lv_obj_t *item = lv_list_add_btn(list, icon, server->hostname);
+        /* lv_list_add_btn's icon parameter is rendered as an lv_img, not a label, so
+         * it can't display glyphs from our custom icon font (they'd show as a missing
+         * "tofu" glyph box). Add the button without an icon, then insert our own icon
+         * label styled with the icon font, matching the pattern used elsewhere (e.g.
+         * the top bar server button / close buttons in settings). */
+        lv_obj_t *item = lv_list_add_btn(list, NULL, server->hostname);
         lv_obj_add_flag(item, LV_OBJ_FLAG_EVENT_BUBBLE);
         if (cur->selected) {
             lv_obj_add_state(item, LV_STATE_CHECKED);
         }
+
+        lv_obj_t *icon_label = lv_label_create(item);
+        lv_obj_set_style_text_font(icon_label, lv_theme_moonlight_get_iconfont_small(item), 0);
+        lv_label_set_text_static(icon_label, icon);
+        lv_obj_clear_flag(icon_label, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_move_to_index(icon_label, 0);
         uuidstr_t *uuid = SDL_malloc(sizeof(uuidstr_t));
         *uuid = cur->id;
         lv_obj_set_user_data(item, uuid);
