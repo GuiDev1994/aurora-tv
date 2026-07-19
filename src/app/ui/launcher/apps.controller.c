@@ -315,13 +315,29 @@ static void update_grid_config(apps_fragment_t *controller) {
     lv_coord_t pad_b = lv_obj_get_style_pad_bottom(applist, 0);
     lv_coord_t gap_col = lv_obj_get_style_pad_column(applist, 0);
     lv_coord_t gap_row = lv_obj_get_style_pad_row(applist, 0);
-    lv_coord_t col_width = (view_w - pad_l - pad_r - gap_col * (col_count - 1)) / col_count;
+
+    /* Row height stays exactly what it was before (fit APPS_GRID_ROWS into the
+     * visible height) so the grid keeps the same overall tile height/scroll
+     * behavior as the pre-fix build. */
     lv_coord_t row_height = (view_h - pad_t - pad_b - gap_row * (APPS_GRID_ROWS - 1)) / APPS_GRID_ROWS;
-    if (col_width < LV_DPX(40)) {
-        col_width = LV_MAX(LV_DPX(40), view_w / col_count);
-    }
     if (row_height < LV_DPX(40)) {
         row_height = LV_MAX(LV_DPX(40), view_h / APPS_GRID_ROWS);
+    }
+
+    /* Cover art assets are 600x800 (3:4, width:height). Derive the item *width*
+     * from the row height instead of stretching the height to fill a square
+     * column, so tiles match the source aspect without changing row height.
+     * Columns are laid out as equal fr tracks by lv_gridview (see update_col_dsc
+     * in lv_gridview.c) with LV_GRID_ALIGN_CENTER, so a narrower item is simply
+     * centered within its track -- this is what gives the covers extra
+     * horizontal breathing room, no explicit gap tweak needed. */
+    lv_coord_t col_width = row_height * 600 / 800;
+    lv_coord_t max_col_width = (view_w - pad_l - pad_r - gap_col * (col_count - 1)) / col_count;
+    if (col_width > max_col_width) {
+        col_width = max_col_width;
+    }
+    if (col_width < LV_DPX(40)) {
+        col_width = LV_DPX(40);
     }
     controller->col_count = col_count;
     controller->col_width = col_width;
