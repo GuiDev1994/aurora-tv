@@ -77,6 +77,11 @@ typedef struct app_settings_t {
      * Independent of smooth_frame_pacing (PTS grid). Set false only for latency experiments.
      */
     bool pause_at_decode_time;
+    /**
+     * webOS: Phase B soft recovery for ≥4K decode backlog (temporary bitrate drop).
+     * Independent of Flush+IDR. Default true for 1.1.5 device testing.
+     */
+    bool soft_recovery;
     bool auto_adjust_bitrate;
     int abr_mode;
     char *conf_dir;

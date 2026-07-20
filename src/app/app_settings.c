@@ -168,9 +168,11 @@ void settings_initialize(app_settings_t *config, char *conf_dir) {
 #if defined(TARGET_WEBOS)
     config->smooth_frame_pacing = true;
     config->pause_at_decode_time = true;
+    config->soft_recovery = true;
 #else
     config->smooth_frame_pacing = false;
     config->pause_at_decode_time = true;
+    config->soft_recovery = false;
 #endif
     config->auto_adjust_bitrate = false;
     config->abr_mode = 0;
@@ -245,6 +247,7 @@ bool settings_save(app_settings_t *config) {
     ini_write_bool(fp, "use_ntsc_refresh", config->use_ntsc_refresh);
     ini_write_bool(fp, "smooth_frame_pacing", config->smooth_frame_pacing);
     ini_write_bool(fp, "pause_at_decode_time", config->pause_at_decode_time);
+    ini_write_bool(fp, "soft_recovery", config->soft_recovery);
 
     ini_write_section(fp, "audio");
     ini_write_string(fp, "backend", config->audio_backend);
@@ -392,6 +395,8 @@ static int settings_parse(app_settings_t *config, const char *section, const cha
         config->smooth_frame_pacing = INI_IS_TRUE(value);
     } else if (INI_FULL_MATCH("video", "pause_at_decode_time")) {
         config->pause_at_decode_time = INI_IS_TRUE(value);
+    } else if (INI_FULL_MATCH("video", "soft_recovery")) {
+        config->soft_recovery = INI_IS_TRUE(value);
     } else if (INI_FULL_MATCH("video", "force_full_color_range")) {
         config->force_full_color_range = INI_IS_TRUE(value);
     } else if (INI_NAME_MATCH("surround")) {
