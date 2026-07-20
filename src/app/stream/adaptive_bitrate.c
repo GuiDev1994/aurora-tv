@@ -25,11 +25,16 @@ struct adaptive_bitrate_service {
     int max_bitrate;
     abr_mode_t mode;
     bool server_supported;
+    bool recovery_only;
     int server_enable_retries;
     int tick_count;
     int stable_seconds;
     int loss_streak;
     Uint32 last_adjust_ticks;
+    Uint32 hold_until;
+    /* Async drop request from the video thread (0 = none). */
+    SDL_atomic_t pending_drop_percent;
+    SDL_atomic_t pending_hold_ms;
     /* Backoff for failing gs_set_bitrate calls (host without the /bitrate
      * endpoint, or transiently unreachable): each failed set doubles the pause
      * up to 30s so we don't burn a fresh TLS handshake every adjust attempt. */
@@ -115,6 +120,9 @@ static bool abr_set_bitrate(adaptive_bitrate_service_t *service, int kbps, const
 
 static void abr_tick_local(adaptive_bitrate_service_t *service, float packet_loss) {
     Uint32 now = SDL_GetTicks();
+    if (service->hold_until != 0 && now < service->hold_until) {
+        return;
+    }
     int cooldown = service->mode == ABR_MODE_LOW_LATENCY ? 1500 : 2000;
     if (now - service->last_adjust_ticks < (Uint32) cooldown) {
         return;
@@ -158,6 +166,33 @@ static void abr_tick_local(adaptive_bitrate_service_t *service, float packet_los
     }
 }
 
+static void abr_apply_pending_drop(adaptive_bitrate_service_t *service) {
+    int percent = SDL_AtomicGet(&service->pending_drop_percent);
+    if (percent <= 0 || percent > 100) {
+        return;
+    }
+    SDL_AtomicSet(&service->pending_drop_percent, 0);
+    int hold_ms = SDL_AtomicGet(&service->pending_hold_ms);
+    if (hold_ms < 1000) {
+        hold_ms = 1000;
+    }
+    int target = service->current_bitrate * percent / 100;
+    if (target < service->min_bitrate) {
+        target = service->min_bitrate;
+    }
+    if (target > service->max_bitrate) {
+        target = service->max_bitrate;
+    }
+    Uint32 now = SDL_GetTicks();
+    if (abr_set_bitrate(service, target, "soft-recovery")) {
+        service->last_adjust_ticks = now;
+        service->hold_until = now + (Uint32) hold_ms;
+        service->stable_seconds = 0;
+        service->loss_streak = 0;
+        commons_log_info("ABR", "Soft recovery hold for %d ms after drop to %d kbps", hold_ms, target);
+    }
+}
+
 static int abr_thread(void *userdata) {
     adaptive_bitrate_service_t *service = userdata;
     while (!SDL_AtomicGet(&service->stop)) {
@@ -166,6 +201,14 @@ static int abr_thread(void *userdata) {
             break;
         }
         service->tick_count++;
+
+        /* Soft-recovery drops are always honored (including recovery_only mode). */
+        abr_apply_pending_drop(service);
+
+        if (service->recovery_only) {
+            continue;
+        }
+
         if (service->tick_count == ABR_START_DELAY_TICKS) {
             GS_ABR_CAPABILITIES caps;
             if (gs_get_abr_capabilities(service->gs_client, &service->server_copy, &caps) == GS_OK &&
@@ -207,6 +250,10 @@ static int abr_thread(void *userdata) {
         }
 
         if (service->server_supported && service->server_enable_retries == 0) {
+            Uint32 now = SDL_GetTicks();
+            if (service->hold_until != 0 && now < service->hold_until) {
+                continue;
+            }
             GS_ABR_FEEDBACK feedback = {
                 .packet_loss = packet_loss,
                 .rtt_ms = (int) rtt,
@@ -252,12 +299,15 @@ adaptive_bitrate_service_t *adaptive_bitrate_start(const adaptive_bitrate_config
     service->initial_bitrate = config->initial_bitrate;
     service->current_bitrate = config->initial_bitrate;
     service->mode = config->mode;
+    service->recovery_only = config->recovery_only;
     abr_apply_mode_preset(service);
     /* The GS_CLIENT only has a connect timeout; cap whole transfers too so an
      * in-flight ABR tick can never stall stop's SDL_WaitThread for long (a
      * half-open host would otherwise hang a request indefinitely). */
     gs_set_total_timeout(service->gs_client, 5);
     SDL_AtomicSet(&service->stop, 0);
+    SDL_AtomicSet(&service->pending_drop_percent, 0);
+    SDL_AtomicSet(&service->pending_hold_ms, 0);
     service->thread = SDL_CreateThread(abr_thread, "abr", service);
     if (!service->thread) {
         free((void *) service->server_copy.uuid);
@@ -267,8 +317,24 @@ adaptive_bitrate_service_t *adaptive_bitrate_start(const adaptive_bitrate_config
         free(service);
         return NULL;
     }
-    commons_log_info("ABR", "Started at %d kbps, mode %s", service->initial_bitrate, abr_mode_to_string(service->mode));
+    commons_log_info("ABR", "Started at %d kbps, mode %s%s", service->initial_bitrate,
+                     abr_mode_to_string(service->mode),
+                     service->recovery_only ? " (recovery-only)" : "");
     return service;
+}
+
+bool adaptive_bitrate_request_drop(adaptive_bitrate_service_t *service, int percent_of_current,
+                                   int hold_ms, const char *reason) {
+    if (service == NULL || percent_of_current <= 0 || percent_of_current > 100) {
+        return false;
+    }
+    (void) reason;
+    SDL_AtomicSet(&service->pending_hold_ms, hold_ms > 0 ? hold_ms : 15000);
+    SDL_AtomicSet(&service->pending_drop_percent, percent_of_current);
+    commons_log_info("ABR", "Queued soft-recovery drop to %d%% (hold %d ms)%s",
+                     percent_of_current, hold_ms,
+                     reason != NULL ? reason : "");
+    return true;
 }
 
 void adaptive_bitrate_stop(adaptive_bitrate_service_t *service, bool restore) {

@@ -140,12 +140,13 @@ int session_worker(session_t *session) {
     }
     session_set_state(session, STREAMING_STREAMING);
     bus_pushevent(USER_STREAM_OPEN, NULL, NULL);
-    if (session->config.auto_adjust_bitrate) {
+    if (session->config.auto_adjust_bitrate || session->config.soft_recovery) {
         adaptive_bitrate_config_t abr_config = {
             .gs_client = client,
             .server = server,
             .initial_bitrate = session->config.stream.bitrate,
             .mode = (abr_mode_t) session->config.abr_mode,
+            .recovery_only = session->config.soft_recovery && !session->config.auto_adjust_bitrate,
         };
         session->abr = adaptive_bitrate_start(&abr_config);
     }
