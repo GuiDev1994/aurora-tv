@@ -166,7 +166,7 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     pref_desc_label(view,
                     locstr("Stamp video presentation timestamps on a steady frame grid instead of "
                            "wall-clock feed time. Reduces hitching when camera pans at high bitrate "
-                           "(e.g. 3.6K HDR HEVC). Disable only for A/B comparison."),
+                           "(e.g. 4K HDR HEVC). Disable only for A/B comparison."),
                     false);
     pref_checkbox(view, locstr("Pause at decode time (Starfish)"), &app_configuration->pause_at_decode_time, false);
     pref_desc_label(view,

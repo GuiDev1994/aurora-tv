@@ -152,9 +152,11 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
                                             &app_configuration->use_ntsc_refresh, false);
     lv_obj_add_event_cb(ntsc_checkbox, on_ntsc_refresh_changed, LV_EVENT_VALUE_CHANGED, self);
     pref_desc_label(view,
-                    locstr("When enabled, 60/120 FPS presets use fractional NTSC pacing (59.94/119.88), "
-                           "including at 4K. When disabled, presets use integer 60/120 like Moonlight mobile. "
-                           "Custom FPS still allows any fractional rate."),
+                    locstr("When enabled, 60/120 FPS presets use fractional NTSC pacing (59.94/119.88). "
+                           "When disabled, presets use integer 60/120 like Moonlight mobile. "
+                           "At 4K the host virtual-display mode stays integer (120) to avoid a black "
+                           "screen on some webOS TVs; NTSC is still sent as clientRefreshRateX100 for "
+                           "encode pacing. Custom FPS still allows any fractional rate."),
                     false);
 
     pref_desc_label(view,
@@ -264,8 +266,14 @@ static void update_bitrate_label(basic_pane_t *pane) {
 
 static void update_bitrate_hint(basic_pane_t *pane) {
     app_t *app = pane->parent->app;
-    if (app->ss4s.video_cap.suggestedBitrate > 0 &&
-        app_configuration->stream.bitrate > app->ss4s.video_cap.suggestedBitrate) {
+    const int bitrate = app_configuration->stream.bitrate;
+    if (bitrate > 250000) {
+        lv_obj_clear_flag(pane->bitrate_warning, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text_static(pane->bitrate_warning,
+                                 locstr("Above 250 Mbps usually brings no quality gain and can cause "
+                                        "packet loss as the connection becomes less stable."));
+    } else if (app->ss4s.video_cap.suggestedBitrate > 0 &&
+               bitrate > app->ss4s.video_cap.suggestedBitrate) {
         lv_obj_clear_flag(pane->bitrate_warning, LV_OBJ_FLAG_HIDDEN);
         lv_label_set_text_static(pane->bitrate_warning, locstr("Higher bitrate may cause performance issue, "
                                                                "try with caution."));

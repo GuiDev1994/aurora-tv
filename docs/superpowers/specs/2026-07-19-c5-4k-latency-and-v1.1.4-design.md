@@ -62,7 +62,7 @@ Limelight → session_video Feed
 5. **SS4S API** `SS4S_PlayerGetVideoRenderQueueLength(player, int *length)` → false if unsupported.
 6. **Overlay**: Starfish `RQ` was prototyped then dropped from the compact overlay (symbol unavailable on device → always `-`). Compact stats show a single FPS plus audio layout (Stereo / 5.1) instead.
 7. Keep Smooth PTS / host PTS mapping as in v1.1.3.
-8. **4K + NTSC:** launch `mode=` may carry fractional NTSC (e.g. `3840x2160x119.88`) when the option is enabled; `clientRefreshRateX100` is also sent for encode pacing.
+8. **4K + NTSC:** launch `mode=` stays integer at 4K (avoids black screen on C5); `clientRefreshRateX100` still carries NTSC for encode pacing.
 
 ## Phase B — Soft recovery (after C5 RQ validation)
 

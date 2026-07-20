@@ -103,8 +103,6 @@ extern const size_t audio_config_len;
 #define RES_720P RES_MERGE(1280, 720)
 #define RES_1080P RES_MERGE(1920, 1080)
 #define RES_1440P RES_MERGE(2560, 1440)
-/** ~90% of 4K (3584×2016); stable on recent LG TVs without full-4K input delay */
-#define RES_3_6K RES_MERGE(3584, 2016)
 #define RES_1800P RES_MERGE(3200, 1800)
 #define RES_4K RES_MERGE(3840, 2160)
 
