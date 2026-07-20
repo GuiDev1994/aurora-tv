@@ -152,10 +152,8 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
                                             &app_configuration->use_ntsc_refresh, false);
     lv_obj_add_event_cb(ntsc_checkbox, on_ntsc_refresh_changed, LV_EVENT_VALUE_CHANGED, self);
     pref_desc_label(view,
-                    locstr("When enabled, 60/120 FPS presets use fractional NTSC pacing (59.94/119.88). "
-                           "When disabled, presets use integer 60/120 like Moonlight mobile. "
-                           "At 4K the host virtual-display mode stays integer (120) for webOS compatibility; "
-                           "NTSC is still sent as clientRefreshRateX100 for encode pacing. "
+                    locstr("When enabled, 60/120 FPS presets use fractional NTSC pacing (59.94/119.88), "
+                           "including at 4K. When disabled, presets use integer 60/120 like Moonlight mobile. "
                            "Custom FPS still allows any fractional rate."),
                     false);
 
