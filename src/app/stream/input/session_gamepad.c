@@ -15,18 +15,15 @@
 
 #define QUIT_BUTTONS (PLAY_FLAG | BACK_FLAG | LB_FLAG | RB_FLAG)
 /** Hold Select (Back) this long to toggle pinned performance stats (Artemis-style). */
-#define GAMEPAD_HOLD_STATS_MS 3000
+#define GAMEPAD_HOLD_STATS_MS 4000
 /** Hold Start (Play) this long to toggle virtual mouse (Artemis-style). */
-#define GAMEPAD_HOLD_VMOUSE_MS 3000
+#define GAMEPAD_HOLD_VMOUSE_MS 4000
 
 static bool quit_combo_pressed = false;
 
-/** Buttons held for client shortcuts; excluded from Moonlight until short-press or cancel. */
-static int deferred_buttons = 0;
+/** Hold timers only detect shortcuts; Select/Start are always forwarded to the host. */
 static SDL_TimerID stats_hold_timer = 0;
 static SDL_TimerID vmouse_hold_timer = 0;
-static bool stats_hold_fired = false;
-static bool vmouse_hold_fired = false;
 
 static void release_buttons(stream_input_t *input, app_gamepad_state_t *gamepad);
 
@@ -43,11 +40,11 @@ static void stream_input_send_unannounced_gamepads(stream_input_t *input);
 
 static void stream_input_send_buttons(stream_input_t *input, app_gamepad_state_t *gamepad);
 
-static void cancel_stats_hold(stream_input_t *input, app_gamepad_state_t *gamepad, bool send_short_press);
+static void cancel_stats_hold(void);
 
-static void cancel_vmouse_hold(stream_input_t *input, app_gamepad_state_t *gamepad, bool send_short_press);
+static void cancel_vmouse_hold(void);
 
-static void cancel_all_holds(stream_input_t *input, app_gamepad_state_t *gamepad, bool send_short_press);
+static void cancel_all_holds(void);
 
 static Uint32 stats_hold_timer_cb(Uint32 interval, void *param);
 
@@ -146,7 +143,7 @@ void stream_input_handle_cbutton(stream_input_t *input, const SDL_ControllerButt
 
     /* Quit overlay combo still uses chord + release. */
     if (gamepad_combo_check(gamepad->buttons, QUIT_BUTTONS)) {
-        cancel_all_holds(input, gamepad, false);
+        cancel_all_holds();
         quit_combo_pressed = true;
         return;
     }
@@ -157,48 +154,27 @@ void stream_input_handle_cbutton(stream_input_t *input, const SDL_ControllerButt
         return;
     }
 
-    /* Select (Back) hold → performance stats; Start hold → virtual mouse. */
+    /* Select/Start always go to the host. Hold timers only arm client shortcuts. */
     if (event->type == SDL_CONTROLLERBUTTONDOWN && button == BACK_FLAG) {
-        cancel_vmouse_hold(input, gamepad, true);
-        if (stats_hold_timer) {
-            SDL_RemoveTimer(stats_hold_timer);
-            stats_hold_timer = 0;
-        }
-        deferred_buttons |= BACK_FLAG;
-        stats_hold_fired = false;
+        cancel_vmouse_hold();
+        cancel_stats_hold();
         stats_hold_timer = SDL_AddTimer(GAMEPAD_HOLD_STATS_MS, stats_hold_timer_cb, NULL);
-        stream_input_send_buttons(input, gamepad);
-        return;
-    }
-    if (event->type == SDL_CONTROLLERBUTTONUP && button == BACK_FLAG) {
-        cancel_stats_hold(input, gamepad, !stats_hold_fired);
-        stream_input_send_buttons(input, gamepad);
-        return;
-    }
-    if (event->type == SDL_CONTROLLERBUTTONDOWN && button == PLAY_FLAG) {
-        cancel_stats_hold(input, gamepad, true);
-        if (vmouse_hold_timer) {
-            SDL_RemoveTimer(vmouse_hold_timer);
-            vmouse_hold_timer = 0;
-        }
-        deferred_buttons |= PLAY_FLAG;
-        vmouse_hold_fired = false;
+    } else if (event->type == SDL_CONTROLLERBUTTONUP && button == BACK_FLAG) {
+        cancel_stats_hold();
+    } else if (event->type == SDL_CONTROLLERBUTTONDOWN && button == PLAY_FLAG) {
+        cancel_stats_hold();
+        cancel_vmouse_hold();
         vmouse_hold_timer = SDL_AddTimer(GAMEPAD_HOLD_VMOUSE_MS, vmouse_hold_timer_cb, NULL);
-        stream_input_send_buttons(input, gamepad);
-        return;
-    }
-    if (event->type == SDL_CONTROLLERBUTTONUP && button == PLAY_FLAG) {
-        cancel_vmouse_hold(input, gamepad, !vmouse_hold_fired);
-        stream_input_send_buttons(input, gamepad);
-        return;
-    }
-
-    /* Any other button while a hold is armed cancels the shortcut and promotes the key. */
-    if ((deferred_buttons & BACK_FLAG) && button != BACK_FLAG) {
-        cancel_stats_hold(input, gamepad, true);
-    }
-    if ((deferred_buttons & PLAY_FLAG) && button != PLAY_FLAG) {
-        cancel_vmouse_hold(input, gamepad, true);
+    } else if (event->type == SDL_CONTROLLERBUTTONUP && button == PLAY_FLAG) {
+        cancel_vmouse_hold();
+    } else {
+        /* Mixing other buttons with a pending hold cancels the shortcut. */
+        if (button != BACK_FLAG) {
+            cancel_stats_hold();
+        }
+        if (button != PLAY_FLAG) {
+            cancel_vmouse_hold();
+        }
     }
 
     stream_input_send_buttons(input, gamepad);
@@ -255,12 +231,11 @@ void stream_input_handle_caxis(stream_input_t *input, const SDL_ControllerAxisEv
         return;
     }
 
-    int buttons = gamepad->buttons & ~deferred_buttons;
     if (vmouse_intercepted(input, gamepad)) {
-        LiSendMultiControllerEvent(gamepad->gs_id, input->input->activeGamepadMask, buttons, 0, 0,
+        LiSendMultiControllerEvent(gamepad->gs_id, input->input->activeGamepadMask, gamepad->buttons, 0, 0,
                                    0, 0, 0, 0);
     } else {
-        LiSendMultiControllerEvent(gamepad->gs_id, input->input->activeGamepadMask, buttons,
+        LiSendMultiControllerEvent(gamepad->gs_id, input->input->activeGamepadMask, gamepad->buttons,
                                    gamepad->leftTrigger,
                                    gamepad->rightTrigger, gamepad->leftStickX, gamepad->leftStickY,
                                    gamepad->rightStickX, gamepad->rightStickY);
@@ -480,65 +455,34 @@ static void stream_input_send_buttons(stream_input_t *input, app_gamepad_state_t
     if (!stream_input_gamepad_sends_moonlight(input, gamepad)) {
         return;
     }
-    int buttons = gamepad->buttons & ~deferred_buttons;
-    LiSendMultiControllerEvent(gamepad->gs_id, input->input->activeGamepadMask, buttons, gamepad->leftTrigger,
+    LiSendMultiControllerEvent(gamepad->gs_id, input->input->activeGamepadMask, gamepad->buttons, gamepad->leftTrigger,
                                gamepad->rightTrigger, gamepad->leftStickX, gamepad->leftStickY, gamepad->rightStickX,
                                gamepad->rightStickY);
 }
 
-static void stream_input_pulse_button(stream_input_t *input, app_gamepad_state_t *gamepad, int flag) {
-    if (!stream_input_gamepad_sends_moonlight(input, gamepad)) {
-        return;
-    }
-    int base = (gamepad->buttons & ~deferred_buttons) | flag;
-    LiSendMultiControllerEvent(gamepad->gs_id, input->input->activeGamepadMask, base, gamepad->leftTrigger,
-                               gamepad->rightTrigger, gamepad->leftStickX, gamepad->leftStickY, gamepad->rightStickX,
-                               gamepad->rightStickY);
-    base &= ~flag;
-    LiSendMultiControllerEvent(gamepad->gs_id, input->input->activeGamepadMask, base, gamepad->leftTrigger,
-                               gamepad->rightTrigger, gamepad->leftStickX, gamepad->leftStickY, gamepad->rightStickX,
-                               gamepad->rightStickY);
-}
-
-static void cancel_stats_hold(stream_input_t *input, app_gamepad_state_t *gamepad, bool pulse_if_short) {
+static void cancel_stats_hold(void) {
     if (stats_hold_timer) {
         SDL_RemoveTimer(stats_hold_timer);
         stats_hold_timer = 0;
     }
-    if ((deferred_buttons & BACK_FLAG) && pulse_if_short && !stats_hold_fired) {
-        deferred_buttons &= ~BACK_FLAG;
-        stream_input_pulse_button(input, gamepad, BACK_FLAG);
-    } else {
-        deferred_buttons &= ~BACK_FLAG;
-    }
-    stats_hold_fired = false;
 }
 
-static void cancel_vmouse_hold(stream_input_t *input, app_gamepad_state_t *gamepad, bool pulse_if_short) {
+static void cancel_vmouse_hold(void) {
     if (vmouse_hold_timer) {
         SDL_RemoveTimer(vmouse_hold_timer);
         vmouse_hold_timer = 0;
     }
-    if ((deferred_buttons & PLAY_FLAG) && pulse_if_short && !vmouse_hold_fired) {
-        deferred_buttons &= ~PLAY_FLAG;
-        stream_input_pulse_button(input, gamepad, PLAY_FLAG);
-    } else {
-        deferred_buttons &= ~PLAY_FLAG;
-    }
-    vmouse_hold_fired = false;
 }
 
-static void cancel_all_holds(stream_input_t *input, app_gamepad_state_t *gamepad, bool send_short_press) {
-    cancel_stats_hold(input, gamepad, send_short_press);
-    cancel_vmouse_hold(input, gamepad, send_short_press);
+static void cancel_all_holds(void) {
+    cancel_stats_hold();
+    cancel_vmouse_hold();
 }
 
 static Uint32 stats_hold_timer_cb(Uint32 interval, void *param) {
     (void) interval;
     (void) param;
     stats_hold_timer = 0;
-    stats_hold_fired = true;
-    deferred_buttons &= ~BACK_FLAG;
     bus_pushevent(USER_TOGGLE_STATS_PIN, NULL, NULL);
     commons_log_info("Input", "Select held %dms — toggle performance stats", GAMEPAD_HOLD_STATS_MS);
     return 0;
@@ -548,8 +492,6 @@ static Uint32 vmouse_hold_timer_cb(Uint32 interval, void *param) {
     (void) interval;
     (void) param;
     vmouse_hold_timer = 0;
-    vmouse_hold_fired = true;
-    deferred_buttons &= ~PLAY_FLAG;
     bus_pushevent(USER_TOGGLE_VMOUSE, NULL, NULL);
     commons_log_info("Input", "Start held %dms — toggle virtual mouse", GAMEPAD_HOLD_VMOUSE_MS);
     return 0;
@@ -563,7 +505,7 @@ static void release_buttons(stream_input_t *input, app_gamepad_state_t *gamepad)
     gamepad->leftStickY = 0;
     gamepad->rightStickX = 0;
     gamepad->rightStickY = 0;
-    deferred_buttons = 0;
+    cancel_all_holds();
     if (!stream_input_gamepad_sends_moonlight(input, gamepad)) {
         return;
     }

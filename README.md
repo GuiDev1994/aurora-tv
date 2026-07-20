@@ -39,8 +39,8 @@ Unofficial fork of [Moonlight TV](https://github.com/mariotaku/moonlight-tv) for
 
 | Gesture | Action |
 |---------|--------|
-| **Hold Select/Back 3s** | Toggle pinned performance stats |
-| **Hold Start 3s** | Toggle virtual mouse (enable in Settings → Input first) |
+| **Hold Select/Back 4s** | Toggle pinned performance stats |
+| **Hold Start 4s** | Toggle virtual mouse (enable in Settings → Input first) |
 
 Full keyboard: stream overlay menu, or Magic Remote **BLUE** (no gamepad chord — avoids conflict with in-game RB+RS). Virtual mouse: right stick = cursor, left stick = scroll, LT/RT = mouse buttons.
 
