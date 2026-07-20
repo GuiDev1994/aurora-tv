@@ -81,15 +81,18 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
                     false);
 
     pref_checkbox(view, locstr("Virtual mouse"), &app_configuration->virtual_mouse, false);
-    pref_desc_label(view, locstr("Press LB + RS to move mouse cursor with sticks. "
-                                 "LT/RT for left/right mouse buttons."),
+    pref_desc_label(view, locstr("Hold Start for 3 seconds during streaming to toggle virtual mouse "
+                                 "(enable here first). Right stick moves the cursor, left stick scrolls, "
+                                 "LT/RT are left/right mouse buttons."),
                     false);
 
     pane->swap_abxy_toggle = pref_checkbox(view, locstr("Swap ABXY buttons"), &app_configuration->swap_abxy, false);
     pref_desc_label(view, locstr("Swap A/B and X/Y gamepad buttons. Useful when you prefer Nintendo-like layouts."),
                     false);
 
-    pref_desc_label(view, locstr("Press RB + RS on the gamepad during streaming to open the keyboard."), false);
+    pref_desc_label(view, locstr("Hold Select/Back for 3 seconds during streaming to pin or unpin performance stats. "
+                                 "Open the on-screen keyboard from the stream overlay or Magic Remote BLUE."),
+                    false);
 
 #if FEATURE_INPUT_EVMOUSE
     hwmouse_state_update(pane);

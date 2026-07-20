@@ -386,6 +386,12 @@ static bool on_event(lv_fragment_t *self, int code, void *userdata) {
             streaming_toggle_stats_pin();
             return true;
         }
+        case USER_TOGGLE_VMOUSE: {
+            if (controller->global->session) {
+                session_toggle_vmouse(controller->global->session);
+            }
+            return true;
+        }
         case USER_OPEN_SOFT_KEYBOARD: {
             if (controller->soft_kbd) {
                 return true;

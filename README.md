@@ -37,13 +37,12 @@ Unofficial fork of [Moonlight TV](https://github.com/mariotaku/moonlight-tv) for
 
 **Open overlay:** Magic Remote **RED** / **EXIT**, or gamepad **LB + RB + Back + Start** (hold, then release).
 
-| Combo | Action |
-|-------|--------|
-| **RB + RS** | Full keyboard |
-| **LB + RS** | Virtual mouse (enable in Settings → Input first) |
-| **LB + LS** | Toggle pinned performance stats |
+| Gesture | Action |
+|---------|--------|
+| **Hold Select/Back 3s** | Toggle pinned performance stats |
+| **Hold Start 3s** | Toggle virtual mouse (enable in Settings → Input first) |
 
-Full keyboard: **RB + RS**, overlay menu, or Magic Remote **BLUE**. Virtual mouse: right stick = cursor, left stick = scroll, LT/RT = mouse buttons.
+Full keyboard: stream overlay menu, or Magic Remote **BLUE** (no gamepad chord — avoids conflict with in-game RB+RS). Virtual mouse: right stick = cursor, left stick = scroll, LT/RT = mouse buttons.
 
 Details, hotkey layout, and stats field reference: [webOS build guide](docs/BUILD_WEBOS.md).
 
