@@ -39,7 +39,6 @@ static const resolution_pair_t built_in_resolutions[] = {
     {1280, 720, true, NULL},
     {1920, 1080, false, NULL},
     {2560, 1440, false, NULL},
-    {3584, 2016, false, "3.6K"},
     {3840, 2160, false, NULL},
 };
 

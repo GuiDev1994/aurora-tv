@@ -38,6 +38,9 @@ static void session_apply_smooth_pacing_env(const session_t *session) {
         unsetenv("SS4S_SMOOTH_PACING_INTERVAL_US");
         unsetenv("SS4S_NDL_PACING_INTERVAL_US");
     }
+
+    bool pause_at_decode = cfg == NULL || cfg->pause_at_decode_time;
+    setenv("SS4S_PAUSE_AT_DECODE_TIME", pause_at_decode ? "1" : "0", 1);
 #else
     (void) session;
 #endif

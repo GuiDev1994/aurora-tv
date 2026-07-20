@@ -66,6 +66,8 @@ static void applist_focus_enter(lv_event_t *event);
 
 static void applist_focus_leave(lv_event_t *event);
 
+static void gridview_focus_with_key_state(lv_obj_t *grid, int idx);
+
 static void update_view_state(apps_fragment_t *controller);
 
 static void appitem_bind(apps_fragment_t *controller, lv_obj_t *item, apploader_item_t *app);
@@ -315,13 +317,29 @@ static void update_grid_config(apps_fragment_t *controller) {
     lv_coord_t pad_b = lv_obj_get_style_pad_bottom(applist, 0);
     lv_coord_t gap_col = lv_obj_get_style_pad_column(applist, 0);
     lv_coord_t gap_row = lv_obj_get_style_pad_row(applist, 0);
-    lv_coord_t col_width = (view_w - pad_l - pad_r - gap_col * (col_count - 1)) / col_count;
+
+    /* Row height stays exactly what it was before (fit APPS_GRID_ROWS into the
+     * visible height) so the grid keeps the same overall tile height/scroll
+     * behavior as the pre-fix build. */
     lv_coord_t row_height = (view_h - pad_t - pad_b - gap_row * (APPS_GRID_ROWS - 1)) / APPS_GRID_ROWS;
-    if (col_width < LV_DPX(40)) {
-        col_width = LV_MAX(LV_DPX(40), view_w / col_count);
-    }
     if (row_height < LV_DPX(40)) {
         row_height = LV_MAX(LV_DPX(40), view_h / APPS_GRID_ROWS);
+    }
+
+    /* Cover art assets are 600x800 (3:4, width:height). Derive the item *width*
+     * from the row height instead of stretching the height to fill a square
+     * column, so tiles match the source aspect without changing row height.
+     * Columns are laid out as equal fr tracks by lv_gridview (see update_col_dsc
+     * in lv_gridview.c) with LV_GRID_ALIGN_CENTER, so a narrower item is simply
+     * centered within its track -- this is what gives the covers extra
+     * horizontal breathing room, no explicit gap tweak needed. */
+    lv_coord_t col_width = row_height * 600 / 800;
+    lv_coord_t max_col_width = (view_w - pad_l - pad_r - gap_col * (col_count - 1)) / col_count;
+    if (col_width > max_col_width) {
+        col_width = max_col_width;
+    }
+    if (col_width < LV_DPX(40)) {
+        col_width = LV_DPX(40);
     }
     controller->col_count = col_count;
     controller->col_width = col_width;
@@ -515,8 +533,21 @@ static void show_ok(apps_fragment_t *fragment) {
     if (lv_group_get_focused(lv_obj_get_group(fragment->applist)) != fragment->applist) {
         lv_group_focus_obj(fragment->applist);
     }
-    int idx = fragment->focus_backup >= 0 ? fragment->focus_backup : 0;
-    lv_gridview_focus(fragment->applist, idx);
+    /* show_ok() runs on every successful poll via update_view_state(), not
+     * just on a genuine transition into this state. Only apply an explicit
+     * item-level focus if the grid doesn't already have one -- unconditionally
+     * re-focusing using focus_backup (which is only updated on blur, never
+     * while the user is actively navigating inside the grid) was snapping
+     * focus back to a stale position every ~10s regardless of where the user
+     * had actually navigated to. This was the actual cause of the reported
+     * "loses focus every ~10s" bug: a regression introduced in commit
+     * 683e2404 ("Add fractional refresh support and input improvements"),
+     * which added this unconditional refocus call -- upstream's show_ok()
+     * has no such call at all. */
+    if (lv_gridview_get_focused_index(fragment->applist) < 0) {
+        int idx = fragment->focus_backup >= 0 ? fragment->focus_backup : 0;
+        gridview_focus_with_key_state(fragment->applist, idx);
+    }
 }
 
 static void show_error(apps_fragment_t *fragment, const char *title, const char *hint, const char *detail) {
@@ -543,14 +574,48 @@ static void appload_loaded(apploader_list_t *apps, void *userdata) {
     }
     int num_changes = -1;
     lv_gridview_data_change_t *changes = apps_list_detect_change(fragment->apploader_apps, apps, &num_changes);
+
+    /* Every poll that isn't a byte-for-byte identical list (e.g. the backend
+     * returning apps in a new order) forces a full grid rebuild via
+     * lv_gridview_set_data_advanced() below. lv_gridview itself already
+     * refuses to recycle the currently-focused item's view during that
+     * rebuild (see grid_recycle_item() in lv_gridview.c), so if the grid
+     * currently owns input focus, that focus already survives on its own --
+     * no action needed here.
+     *
+     * What still breaks is fragment->focus_backup, which is only updated when
+     * focus *leaves* the grid (applist_focus_leave). If the grid doesn't
+     * currently own focus (e.g. the user is on the top bar), that backup is a
+     * raw index into the *old* list, which apps_list_detect_change() may have
+     * just reordered -- so re-resolve it by app id before it's used to
+     * restore focus later (show_ok / applist_focus_enter / apps_focus_rail).
+     * We deliberately do NOT call lv_gridview_focus() here: doing so while
+     * the grid already owns focus would fight the preservation above using
+     * this same possibly-stale backup value, which is what caused focus to
+     * visibly jump during normal browsing after the first pass at this fix. */
     if (num_changes != 0) {
-        fragment->focus_backup = 0;
+        int live_focus = lv_gridview_get_focused_index(fragment->applist);
+        if (live_focus < 0) {
+            int prev_index = fragment->focus_backup;
+            int focused_app_id = -1;
+            if (fragment->apploader_apps != NULL && prev_index >= 0
+                    && (size_t) prev_index < fragment->apploader_apps->count) {
+                focused_app_id = fragment->apploader_apps->items[prev_index].base.id;
+            }
+            int new_index = 0;
+            if (focused_app_id >= 0) {
+                const apploader_item_t *found = apploader_list_item_by_id(apps, focused_app_id);
+                if (found != NULL) {
+                    new_index = (int) (found - apps->items);
+                }
+            }
+            fragment->focus_backup = new_index;
+        }
     }
+
     apploader_list_free(fragment->apploader_apps);
     fragment->apploader_apps = apps;
-    if (num_changes != 0) {
-        lv_gridview_focus(fragment->applist, 0);
-    }
+
     lv_gridview_set_data_advanced(fragment->applist, apps, changes, num_changes);
     if (changes != NULL) {
         free(changes);
@@ -582,8 +647,18 @@ static void appload_errored(int code, const char *error, void *userdata) {
 static void appitem_bind(apps_fragment_t *controller, lv_obj_t *item, apploader_item_t *app) {
     appitem_viewholder_t *holder = lv_obj_get_user_data(item);
 
-    coverloader_display(controller->coverloader, &controller->uuid, app->base.id, item,
-                        controller->col_width, controller->col_height);
+    /* lv_gridview's fill_rows() rebinds every visible tile on every single
+     * lv_gridview_set_data_advanced() call, including when the view wasn't
+     * recycled and is already showing this exact app (e.g. every ~10s poll
+     * that finds nothing changed). coverloader_display() unconditionally
+     * cancels any in-flight load and kicks off a new one, which redraws the
+     * cover art even when it's already correct -- that's what caused the
+     * cover art to visibly flicker on every poll. Skip it when this view is
+     * already displaying the right app's cover. */
+    if (holder->app_id != app->base.id) {
+        coverloader_display(controller->coverloader, &controller->uuid, app->base.id, item,
+                            controller->col_width, controller->col_height);
+    }
     lv_label_set_text(holder->title, app->base.name);
 
     int current_id = pcmanager_server_current_app(pcmanager, &controller->uuid);
@@ -677,11 +752,28 @@ static void adapter_bind_view(lv_obj_t *grid, lv_obj_t *item_view, void *data, i
 }
 
 
+/* lv_gridview_focus() reports its FOCUSED event using lv_indev_get_act(),
+ * which is NULL whenever focus is routed into the grid programmatically
+ * (group-focus mechanics, fragment lifecycle, etc.) rather than from a live
+ * keypress. LVGL's default LV_EVENT_FOCUSED handler only applies
+ * LV_STATE_FOCUS_KEY for a genuine keypad/encoder indev, so in the
+ * programmatic case the tile ends up focused internally
+ * (grid->focused_index is correct) but shows no selection outline at all.
+ * Force the state directly after focusing, same as upstream's
+ * set_detail_opened() already does for non-gridview objects. */
+static void gridview_focus_with_key_state(lv_obj_t *grid, int idx) {
+    lv_gridview_focus(grid, idx);
+    lv_obj_t *focused_item = lv_gridview_get_item_view(grid, idx);
+    if (focused_item) {
+        lv_obj_add_state(focused_item, LV_STATE_FOCUS_KEY);
+    }
+}
+
 static void applist_focus_enter(lv_event_t *event) {
     if (event->target != event->current_target) { return; }
     apps_fragment_t *controller = lv_event_get_user_data(event);
     int idx = controller->focus_backup >= 0 ? controller->focus_backup : 0;
-    lv_gridview_focus(controller->applist, idx);
+    gridview_focus_with_key_state(controller->applist, idx);
 }
 
 static void applist_focus_leave(lv_event_t *event) {
@@ -846,7 +938,13 @@ static lv_gridview_data_change_t *apps_list_detect_change(const apploader_list_t
                                                           const apploader_list_t *new_list, int *num_changes) {
     if (old_list == NULL && new_list == NULL) {
         *num_changes = 0;
-        return NULL;
+        /* Must be non-NULL: lv_gridview_set_data_advanced() treats a NULL
+         * changes pointer as "invalidate everything" regardless of
+         * num_changes (see its `changes == NULL || num_changes < 0` check),
+         * so a genuinely-empty change set still needs a real (if unused)
+         * pointer to avoid a full, unnecessary grid rebuild. Freed by the
+         * caller. */
+        return calloc(1, sizeof(lv_gridview_data_change_t));
     } else if ((old_list != NULL) != (new_list != NULL)) {
         *num_changes = -1;
         return NULL;
@@ -861,7 +959,12 @@ static lv_gridview_data_change_t *apps_list_detect_change(const apploader_list_t
         }
     }
     *num_changes = 0;
-    return NULL;
+    /* Non-NULL sentinel -- see comment above. num_changes=0 means the widget
+     * never iterates this array, but it must not be NULL or the widget will
+     * still fully recycle and rebuild every visible tile on every poll (the
+     * cause of the cover art flickering on every ~10s refresh), even when
+     * nothing actually changed. */
+    return calloc(1, sizeof(lv_gridview_data_change_t));
 }
 
 static int apps_raw_visible_count(apps_fragment_t *controller, apploader_list_t *list) {
@@ -886,7 +989,7 @@ void apps_focus_rail(apps_fragment_t *controller) {
     }
     lv_group_focus_obj(controller->applist);
     int idx = controller->focus_backup >= 0 ? controller->focus_backup : 0;
-    lv_gridview_focus(controller->applist, idx);
+    gridview_focus_with_key_state(controller->applist, idx);
 }
 
 static void applist_key_up_to_topbar(lv_event_t *event) {

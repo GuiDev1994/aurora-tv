@@ -7,9 +7,9 @@ Unofficial fork of [Moonlight TV](https://github.com/mariotaku/moonlight-tv) for
 ## Highlights
 
 - **AMOLED layout** — pure black background, dark surfaces, violet accent.
-- **3.6K (3584×2016)** — between 2K and 4K; strong quality with less decoder load than native 4K.
+- **Native 4K (3840×2160)** streaming with HDR10 when supported.
 - **HDR10 (PQ)** over HEVC Main10 (when supported).
-- Up to **300 Mbps** bitrate; **~270 Mbps** is a practical ceiling on stable 5 GHz Wi‑Fi for 3.6K HDR 120 Hz.
+- Bitrate slider up to **300 Mbps**; above **250 Mbps** there is usually no visible gain and packet loss becomes more likely as the link becomes less stable.
 - **Performance stats overlay**, **full on-screen keyboard**, and **virtual mouse** during streaming.
 
 ## Screenshots
@@ -28,22 +28,21 @@ Unofficial fork of [Moonlight TV](https://github.com/mariotaku/moonlight-tv) for
 
 | Setting | Suggestion |
 |---------|------------|
-| Resolution | **3.6K** (3584×2016) |
+| Resolution | **4K** (3840×2160) |
 | FPS | 60 or 120 |
 | Codec | HEVC (H.265) |
-| Bitrate | Start at **120–180 Mbps**; raise toward **~270 Mbps** on a stable link |
+| Bitrate | Start at **120–180 Mbps**; stay at or below **250 Mbps** for a stable link. Higher values rarely help and can increase packet loss. |
 
 ## Streaming controls
 
 **Open overlay:** Magic Remote **RED** / **EXIT**, or gamepad **LB + RB + Back + Start** (hold, then release).
 
-| Combo | Action |
-|-------|--------|
-| **RB + RS** | Full keyboard |
-| **LB + RS** | Virtual mouse (enable in Settings → Input first) |
-| **LB + LS** | Toggle pinned performance stats |
+| Gesture | Action |
+|---------|--------|
+| **Hold Select/Back 4s** | Toggle pinned performance stats |
+| **Hold Start 4s** | Toggle virtual mouse (enable in Settings → Input first) |
 
-Full keyboard: **RB + RS**, overlay menu, or Magic Remote **BLUE**. Virtual mouse: right stick = cursor, left stick = scroll, LT/RT = mouse buttons.
+Full keyboard: stream overlay menu, or Magic Remote **BLUE** (no gamepad chord — avoids conflict with in-game RB+RS). Virtual mouse: right stick = cursor, left stick = scroll, LT/RT = mouse buttons.
 
 Details, hotkey layout, and stats field reference: [webOS build guide](docs/BUILD_WEBOS.md).
 
@@ -78,6 +77,13 @@ docker run --rm \
 The `.ipk` is written to `dist/com.aurora.gamestream_<version>_arm.ipk`. To generate a Homebrew manifest locally (optional), install `webosbrew-gen-manifest` once; official [releases](https://github.com/GuiDev1994/aurora-tv/releases) build and publish the manifest via GitHub Actions.
 
 Full build, install, and troubleshooting guide: [docs/BUILD_WEBOS.md](docs/BUILD_WEBOS.md).
+
+## Contributors
+
+Thanks to everyone helping improve Aurora:
+
+- [KrisEnigma](https://github.com/KrisEnigma) — UI polish and launcher fixes ([#41](https://github.com/GuiDev1994/aurora-tv/pull/41)–[#49](https://github.com/GuiDev1994/aurora-tv/pull/49))
+- [danbrun](https://github.com/danbrun) — 5.1 surround channel mapping ([#50](https://github.com/GuiDev1994/aurora-tv/pull/50))
 
 ## Credits
 

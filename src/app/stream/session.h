@@ -37,6 +37,8 @@ typedef struct VIDEO_STATS {
     float receivedFps;
     float decodedFps;
     float avgDecoderLatency;
+    /** Starfish/SMP render queue depth; -1 if unavailable. */
+    int videoRenderQueue;
     uint32_t rtt, rttVariance;
     uint64_t receivedBytes;
     uint32_t currentBitrateKbps;
@@ -48,6 +50,7 @@ typedef struct VIDEO_INFO {
     int height;
     bool has_host_latency;
     bool has_decoder_latency;
+    bool has_render_queue;
 } VIDEO_INFO;
 
 typedef struct AUDIO_INFO {

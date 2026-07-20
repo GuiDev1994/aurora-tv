@@ -22,12 +22,13 @@ lv_obj_t *appitem_view(apps_fragment_t *controller, lv_obj_t *parent) {
     lv_obj_set_size(item, controller->col_width, controller->col_height);
     lv_img_set_antialias(item, true);
 
+    /* Selection is shown with an outline only, no zoom/scale transform. A scale
+     * transform moves the effective draw rect away from the (unzoomed) rounded-
+     * corner clip mask computed for the object's base bounds, which is why the
+     * cover art used to lose its rounding -- and gain a slight overflow past the
+     * frame -- specifically while focused. Matches the reference LG webOS
+     * Moonlight client, which doesn't zoom the selected tile either. */
     lv_obj_set_style_outline_opa(item, LV_OPA_COVER, LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_transform_pivot_x(item, controller->col_width / 2, 0);
-    lv_obj_set_style_transform_pivot_y(item, controller->col_height / 2, 0);
-
-    lv_obj_set_style_transform_zoom(item, 256 * 98 / 100, LV_STATE_PRESSED);
-    lv_obj_set_style_transform_zoom(item, 256 * 106 / 100, LV_STATE_FOCUS_KEY);
     lv_obj_set_style_transition(item, &styles->tr_pressed, LV_STATE_PRESSED | LV_STATE_FOCUS_KEY);
     lv_obj_set_style_transition(item, &styles->tr_released, LV_STATE_DEFAULT);
     lv_obj_add_event_cb(item, appitem_draw_decor, LV_EVENT_DRAW_MAIN, styles);
@@ -67,21 +68,18 @@ lv_obj_t *appitem_view(apps_fragment_t *controller, lv_obj_t *parent) {
 void appitem_style_init(appitem_styles_t *style) {
     lv_style_init(&style->cover);
     lv_style_set_pad_all(&style->cover, 0);
-    lv_style_set_radius(&style->cover, LV_DPX(10));
+    /* Subtle rounding, no border, no shadow: the theme is OLED-first (near-black
+     * background), where a drop shadow has nothing dark enough to blend into and
+     * reads as a hard-edged rectangle around the corner radius instead of a soft
+     * falloff. Selection is indicated by the outline below. */
+    lv_style_set_radius(&style->cover, LV_DPX(6));
     lv_style_set_clip_corner(&style->cover, true);
-    lv_style_set_border_width(&style->cover, LV_DPX(1));
-    lv_style_set_border_color(&style->cover, ml_color_hex(ML_COLOR_BORDER));
-    lv_style_set_border_opa(&style->cover, LV_OPA_COVER);
-    lv_style_set_shadow_opa(&style->cover, LV_OPA_40);
-    lv_style_set_shadow_width(&style->cover, LV_DPX(16));
-    lv_style_set_shadow_ofs_y(&style->cover, LV_DPX(6));
-    lv_style_set_shadow_color(&style->cover, ml_color_hex(ML_COLOR_BG));
+    lv_style_set_border_width(&style->cover, 0);
+    lv_style_set_shadow_opa(&style->cover, LV_OPA_TRANSP);
     lv_style_set_outline_color(&style->cover, ml_color_hex(ML_COLOR_PRIMARY));
     lv_style_set_outline_width(&style->cover, LV_DPX(4));
     lv_style_set_outline_opa(&style->cover, LV_OPA_TRANSP);
     lv_style_set_outline_pad(&style->cover, LV_DPX(3));
-    lv_style_set_shadow_width(&style->cover, LV_DPX(24));
-    lv_style_set_shadow_opa(&style->cover, LV_OPA_50);
 
     lv_style_init(&style->btn);
     lv_style_set_width(&style->btn, LV_DPX(44));
@@ -100,7 +98,7 @@ void appitem_style_init(appitem_styles_t *style) {
     lv_style_set_pad_ver(&style->btn, LV_DPX(10));
 
     static const lv_style_prop_t trans_props[] = {
-            LV_STYLE_OUTLINE_OPA, LV_STYLE_TRANSFORM_WIDTH, LV_STYLE_TRANSFORM_HEIGHT, LV_STYLE_TRANSFORM_ZOOM, 0
+            LV_STYLE_OUTLINE_OPA, 0
     };
     lv_style_transition_dsc_init(&style->tr_pressed, trans_props, lv_anim_path_ease_out, APPITEM_TRANSIT_MS,
                                  0, NULL);

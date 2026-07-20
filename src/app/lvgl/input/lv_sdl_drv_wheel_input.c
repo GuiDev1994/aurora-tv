@@ -54,10 +54,16 @@ static bool wheel_handle_scrollable(app_ui_input_t *input, const SDL_MouseWheelE
                 const lv_coord_t overflow =
                         lv_obj_get_scroll_top(scrollable) + lv_obj_get_scroll_bottom(scrollable);
                 if (overflow > 0) {
-                    /* SDL: y > 0 = away (scroll up). LVGL: positive dy scrolls content down. */
+                    /* Confirmed inverted on-device with the original mapping. Match
+                     * wheel_handle_gridview's convention: wheel down (y > 0) reveals
+                     * further/later content, same direction as paging forward. */
                     const lv_coord_t step = LV_MAX(lv_dpx(48), lv_obj_get_height(scrollable) / 6);
-                    const lv_coord_t dy = (wheel->y > 0) ? -step : step;
-                    lv_obj_scroll_by_bounded(scrollable, 0, dy, LV_ANIM_ON);
+                    const lv_coord_t dy = (wheel->y > 0) ? step : -step;
+                    /* LV_ANIM_OFF: track wheel input directly instead of queuing a
+                     * ~200-400ms animated hop per tick, which felt sluggish/laggy
+                     * when scrolling quickly (browser/native scrolling doesn't
+                     * animate each discrete wheel tick either). */
+                    lv_obj_scroll_by_bounded(scrollable, 0, dy, LV_ANIM_OFF);
                     return true;
                 }
             }
@@ -91,7 +97,10 @@ static void sdl_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
             /* Scroll settings / host lists instead of changing focus. */
         } else if (e.wheel.y != 0) {
             /* Encoder scroll only: never set PRESSED — that triggers LVGL "encoder button" clicks. */
-            data->enc_diff = (e.wheel.y > 0) ? -1 : 1;
+            /* Fallback for lists that fit without overflow (wheel_handle_scrollable above only
+             * fires when there's actual scroll room). Match wheel_handle_gridview's convention:
+             * wheel down (y > 0) should move focus forward/down (positive enc_diff). */
+            data->enc_diff = (e.wheel.y > 0) ? 1 : -1;
         }
     }
     data->continue_reading = false;

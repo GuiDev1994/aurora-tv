@@ -172,7 +172,6 @@ bool streaming_refresh_stats() {
         const char *hdr_suffix = app_configuration->hdr ? " HDR" : "";
         int w = info->width > 0 ? info->width : 0;
         int h = info->height > 0 ? info->height : 0;
-        float renderFps = streaming_render_fps(dst->decodedFps);
         float lossPct = (dst->totalFrames > 0)
             ? (float) dst->networkDroppedFrames / (float) dst->totalFrames * 100.0f
             : 0.0f;
@@ -198,11 +197,20 @@ bool streaming_refresh_stats() {
         }
         float totalMs = (float) dst->rtt + hostMs + submitMs + decOnlyMs;
 
+        const char *audio_ch = audio_stream_info.channels;
+        if (audio_ch == NULL || audio_ch[0] == '\0') {
+            audio_ch = "-";
+        } else if (strcmp(audio_ch, "5.1ch") == 0) {
+            audio_ch = "5.1";
+        } else if (strcmp(audio_ch, "7.1ch") == 0) {
+            audio_ch = "7.1";
+        }
+
         int len = snprintf(stats_line, sizeof(stats_line),
-                           "%dx%d %s%s FPS %.1f Rx \xb7 %.1f De \xb7 %.1f Rd "
+                           "%dx%d %s%s FPS %.1f "
                            "N %u \xb1 %ums FD %.2f%% BW %.2f Mbps",
                            w, h, codec, hdr_suffix,
-                           dst->receivedFps, dst->decodedFps, renderFps,
+                           dst->receivedFps,
                            (unsigned) dst->rtt, (unsigned) dst->rttVariance,
                            lossPct, bitrateMbps);
         if (len > 0 && (size_t) len < sizeof(stats_line) && (have_render || have_decode || have_encode)) {
@@ -219,9 +227,14 @@ bool streaming_refresh_stats() {
                 first = false;
             }
             if (have_encode && len > 0 && (size_t) len < sizeof(stats_line)) {
-                snprintf(stats_line + len, sizeof(stats_line) - (size_t) len,
-                         "%sEn %.1fms", first ? "" : " \xb7 ", hostMs);
+                len += snprintf(stats_line + len, sizeof(stats_line) - (size_t) len,
+                                "%sEn %.1fms", first ? "" : " \xb7 ", hostMs);
+                first = false;
             }
+            (void) first;
+        }
+        if (len > 0 && (size_t) len < sizeof(stats_line)) {
+            snprintf(stats_line + len, sizeof(stats_line) - (size_t) len, " | %s", audio_ch);
         }
         lv_label_set_text(controller->stats_compact_label, stats_line);
         /* Quality dot: green ≤25ms, yellow ≤30ms, red >30ms */
@@ -371,6 +384,12 @@ static bool on_event(lv_fragment_t *self, int code, void *userdata) {
         }
         case USER_TOGGLE_STATS_PIN: {
             streaming_toggle_stats_pin();
+            return true;
+        }
+        case USER_TOGGLE_VMOUSE: {
+            if (controller->global->session) {
+                session_toggle_vmouse(controller->global->session);
+            }
             return true;
         }
         case USER_OPEN_SOFT_KEYBOARD: {

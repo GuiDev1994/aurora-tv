@@ -1365,6 +1365,14 @@ lv_obj_t *settings_launcher_embedded_create(lv_fragment_t *self, lv_obj_t *paren
     lv_obj_set_style_bg_opa(scroll, LV_OPA_TRANSP, 0);
     lv_obj_set_scroll_dir(scroll, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(scroll, LV_SCROLLBAR_MODE_AUTO);
+    /* lv_obj_remove_style_all() above also strips the scrollbar part's look, and
+     * nothing in the theme styles LV_PART_SCROLLBAR globally, so this pane never
+     * showed a scrollbar at all. Give it a plain, native-style thumb. */
+    lv_obj_set_style_width(scroll, LV_DPX(6), LV_PART_SCROLLBAR);
+    lv_obj_set_style_radius(scroll, LV_RADIUS_CIRCLE, LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_color(scroll, ml_color_hex(ML_COLOR_TEXT_MUTED), LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(scroll, LV_OPA_50, LV_PART_SCROLLBAR);
+    lv_obj_set_style_pad_right(scroll, LV_DPX(4), LV_PART_SCROLLBAR);
 
     return backdrop;
 }
