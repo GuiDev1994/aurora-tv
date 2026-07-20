@@ -60,8 +60,9 @@ Limelight → session_video Feed
 3. **SMP** `MakeLoadPayload`: set `pauseAtDecodeTime` from that env (default true if unset).
 4. **Wrapper** `StarfishMediaAPIs_getVideoRenderQueueLength` via weak Itanium symbol (mirror `setHdrInfo` / `getAudioBufferSize`). Confirm mangled name with `nm -D libStarfishMediaAPIs.so` on device before trusting.
 5. **SS4S API** `SS4S_PlayerGetVideoRenderQueueLength(player, int *length)` → false if unsupported.
-6. **Overlay**: show `RQ n` or `RQ -` when unavailable.
+6. **Overlay**: Starfish `RQ` was prototyped then dropped from the compact overlay (symbol unavailable on device → always `-`). Compact stats show a single FPS plus audio layout (Stereo / 5.1) instead.
 7. Keep Smooth PTS / host PTS mapping as in v1.1.3.
+8. **4K + NTSC:** launch `mode=` stays integer at 4K (avoids black screen / severe desync on C5); `clientRefreshRateX100` still carries NTSC for encode pacing.
 
 ## Phase B — Soft recovery (after C5 RQ validation)
 

@@ -172,7 +172,6 @@ bool streaming_refresh_stats() {
         const char *hdr_suffix = app_configuration->hdr ? " HDR" : "";
         int w = info->width > 0 ? info->width : 0;
         int h = info->height > 0 ? info->height : 0;
-        float renderFps = streaming_render_fps(dst->decodedFps);
         float lossPct = (dst->totalFrames > 0)
             ? (float) dst->networkDroppedFrames / (float) dst->totalFrames * 100.0f
             : 0.0f;
@@ -198,11 +197,20 @@ bool streaming_refresh_stats() {
         }
         float totalMs = (float) dst->rtt + hostMs + submitMs + decOnlyMs;
 
+        const char *audio_ch = audio_stream_info.channels;
+        if (audio_ch == NULL || audio_ch[0] == '\0') {
+            audio_ch = "-";
+        } else if (strcmp(audio_ch, "5.1ch") == 0) {
+            audio_ch = "5.1";
+        } else if (strcmp(audio_ch, "7.1ch") == 0) {
+            audio_ch = "7.1";
+        }
+
         int len = snprintf(stats_line, sizeof(stats_line),
-                           "%dx%d %s%s FPS %.1f Rx \xb7 %.1f De \xb7 %.1f Rd "
+                           "%dx%d %s%s FPS %.1f "
                            "N %u \xb1 %ums FD %.2f%% BW %.2f Mbps",
                            w, h, codec, hdr_suffix,
-                           dst->receivedFps, dst->decodedFps, renderFps,
+                           dst->receivedFps,
                            (unsigned) dst->rtt, (unsigned) dst->rttVariance,
                            lossPct, bitrateMbps);
         if (len > 0 && (size_t) len < sizeof(stats_line) && (have_render || have_decode || have_encode)) {
@@ -226,12 +234,7 @@ bool streaming_refresh_stats() {
             (void) first;
         }
         if (len > 0 && (size_t) len < sizeof(stats_line)) {
-            if (vdec_stream_info.has_render_queue && dst->videoRenderQueue >= 0) {
-                snprintf(stats_line + len, sizeof(stats_line) - (size_t) len,
-                         " | RQ %d", dst->videoRenderQueue);
-            } else {
-                snprintf(stats_line + len, sizeof(stats_line) - (size_t) len, " | RQ -");
-            }
+            snprintf(stats_line + len, sizeof(stats_line) - (size_t) len, " | %s", audio_ch);
         }
         lv_label_set_text(controller->stats_compact_label, stats_line);
         /* Quality dot: green ≤25ms, yellow ≤30ms, red >30ms */
@@ -277,20 +280,10 @@ bool streaming_refresh_stats() {
             } else {
                 lv_label_set_text_fmt(controller->stats_items.vdec_latency, "not available");
             }
-            if (controller->stats_items.render_queue) {
-                if (vdec_stream_info.has_render_queue && dst->videoRenderQueue >= 0) {
-                    lv_label_set_text_fmt(controller->stats_items.render_queue, "%d", dst->videoRenderQueue);
-                } else {
-                    lv_label_set_text(controller->stats_items.render_queue, "not available");
-                }
-            }
     } else {
         lv_label_set_text(controller->stats_items.drop_rate, "-");
         lv_label_set_text_fmt(controller->stats_items.host_latency, "-");
         lv_label_set_text_fmt(controller->stats_items.vdec_latency, "-");
-        if (controller->stats_items.render_queue) {
-            lv_label_set_text(controller->stats_items.render_queue, "-");
-        }
     }
     streaming_refresh_battery(controller);
     return true;

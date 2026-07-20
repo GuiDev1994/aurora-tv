@@ -382,13 +382,7 @@ void vdec_stat_submit(const struct VIDEO_STATS *src, unsigned long now) {
     } else {
         dst->avgDecoderLatency = 0;
     }
-    int renderQueue = 0;
-    if (SS4S_PlayerGetVideoRenderQueueLength(player, &renderQueue)) {
-        dst->videoRenderQueue = renderQueue;
-        vdec_stream_info.has_render_queue = true;
-    } else {
-        dst->videoRenderQueue = -1;
-    }
+    dst->videoRenderQueue = -1;
     vdec_stats_write_end();
     app_bus_post(session->app, (bus_actionfunc) streaming_refresh_stats, NULL);
 }
