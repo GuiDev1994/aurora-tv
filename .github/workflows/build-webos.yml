@@ -6,7 +6,17 @@ on:
     tags-ignore:
       - 'v*.*.*'
     branches:
-      - '**'
+      - main
+      - 'release/**'
+  pull_request:
+    branches:
+      - main
+
+# Drop superseded builds for the same ref so stuck/queued runners do not pile up.
+concurrency:
+  group: build-webos-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Debug
@@ -15,6 +25,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    timeout-minutes: 90
 
     steps:
       - name: Set Short Commit ID

@@ -11,10 +11,15 @@ permissions:
 env:
   BUILD_TYPE: Release
 
+concurrency:
+  group: release-webos-${{ github.event.release.tag_name }}
+  cancel-in-progress: true
+
 jobs:
   release-webos:
     name: Release (webOS)
     runs-on: ubuntu-latest
+    timeout-minutes: 120
 
     steps:
       - name: Checkout Source
