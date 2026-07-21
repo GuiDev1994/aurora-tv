@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 #include <assert.h>
 
 #include <opus_multistream.h>
@@ -18,7 +19,38 @@ static int frame_size = 0, unit_size = 0;
 
 AUDIO_INFO audio_stream_info;
 
-static size_t opus_head_serialize(const OPUS_MULTISTREAM_CONFIGURATION *config, unsigned char *data);
+static size_t opus_head_serialize(const POPUS_MULTISTREAM_CONFIGURATION *config, unsigned char *data);
+
+#if TARGET_WEBOS
+/* NDL/webOS Opus 5.1 layout (FL FR RL RR C LFE). Same as surround_params "642014523". */
+static const unsigned char WEBOS_OPUS_51_MAPPING[6] = {0, 1, 4, 5, 2, 3};
+
+static void maybe_remap_webos_51(OPUS_MULTISTREAM_CONFIGURATION *config) {
+    if (config->channelCount != 6) {
+        return;
+    }
+    /* Hosts that honor surround_params already send webOS order — remapping again
+     * swaps channels (regression for Apollo on some sets after #50). Only remap when
+     * the stream is still in Moonlight/SDL order (FL FR C LFE RL RR). */
+    if (memcmp(config->mapping, WEBOS_OPUS_51_MAPPING, sizeof(WEBOS_OPUS_51_MAPPING)) == 0) {
+        commons_log_info("Session", "5.1 Opus mapping already webOS order; skip remap");
+        return;
+    }
+
+    unsigned char tmp;
+    /* Center (2) <-> Surround Left (4); LFE (3) <-> Surround Right (5) */
+    tmp = config->mapping[2];
+    config->mapping[2] = config->mapping[4];
+    config->mapping[4] = tmp;
+    tmp = config->mapping[3];
+    config->mapping[3] = config->mapping[5];
+    config->mapping[5] = tmp;
+    commons_log_info("Session",
+                     "5.1 Opus mapping remapped to webOS order [%u,%u,%u,%u,%u,%u]",
+                     config->mapping[0], config->mapping[1], config->mapping[2],
+                     config->mapping[3], config->mapping[4], config->mapping[5]);
+}
+#endif
 
 static int aud_init(int audioConfiguration, const POPUS_MULTISTREAM_CONFIGURATION opusConfig, void *context,
                     int arFlags) {
@@ -32,20 +64,9 @@ static int aud_init(int audioConfiguration, const POPUS_MULTISTREAM_CONFIGURATIO
 
     OPUS_MULTISTREAM_CONFIGURATION config_copy = *opusConfig;
 
-    // Swap channels for 5.1 surround sound because the Moonlight library normalizes to
-    // FL, FR, Center, LFE, RL, RR but WebOS hardware expects FL, FR, RL, RR, Center, LFE.
-    if (config_copy.channelCount == 6) {
-        unsigned char tmp;
-        // Swap Front Center (2) <-> Rear/Surround Left (4)
-        tmp = config_copy.mapping[2];
-        config_copy.mapping[2] = config_copy.mapping[4];
-        config_copy.mapping[4] = tmp;
-
-        // Swap Subwoofer/LFE (3) <-> Rear/Surround Right (5)
-        tmp = config_copy.mapping[3];
-        config_copy.mapping[3] = config_copy.mapping[5];
-        config_copy.mapping[5] = tmp;
-    }
+#if TARGET_WEBOS
+    maybe_remap_webos_51(&config_copy);
+#endif
 
     SS4S_AudioInfo info = {
             .numOfChannels = config_copy.channelCount,
