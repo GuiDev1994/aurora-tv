@@ -107,8 +107,9 @@ int session_worker(session_t *session) {
     const char *surround_params = NULL;
 #if TARGET_WEBOS
     if (session->config.stream.audioConfiguration == AUDIO_CONFIGURATION_51_SURROUND) {
-        // 6 channels, 4 streams, 2 coupled streams, FL, FR, SL, SR, FC, LFE
-        surround_params = "642014523";
+        // Send standard channel order so all hosts use the same layout.
+        // This is then remapped to the WebOS order in opus_fix.c from SS4S.
+        surround_params = "642012345";
     }
 #endif
     short gamepad_mask = app_input_gamepads_mask(&app->input);
