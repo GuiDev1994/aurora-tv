@@ -19,7 +19,7 @@ static int frame_size = 0, unit_size = 0;
 
 AUDIO_INFO audio_stream_info;
 
-static size_t opus_head_serialize(const POPUS_MULTISTREAM_CONFIGURATION *config, unsigned char *data);
+static size_t opus_head_serialize(const OPUS_MULTISTREAM_CONFIGURATION *config, unsigned char *data);
 
 #if TARGET_WEBOS
 /* NDL/webOS Opus 5.1 layout (FL FR RL RR C LFE). Same as surround_params "642014523". */
