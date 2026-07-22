@@ -17,30 +17,59 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#if TARGET_WEBOS
+#include <SDL.h>
+#endif
+
 static void session_apply_smooth_pacing_env(const session_t *session) {
 #if TARGET_WEBOS
-    const app_settings_t *cfg = app_configuration;
-    bool smooth = cfg != NULL ? cfg->smooth_frame_pacing : true;
-    const char *smooth_val = smooth ? "1" : "0";
-    /* Shared names for SMP + NDL; keep NDL_* aliases for older module builds. */
-    setenv("SS4S_SMOOTH_PACING", smooth_val, 1);
-    setenv("SS4S_NDL_SMOOTH_PACING", smooth_val, 1);
+    /* Always-on aggressive pacing (no user toggle). */
+    setenv("SS4S_SMOOTH_PACING", "1", 1);
+    setenv("SS4S_NDL_SMOOTH_PACING", "1", 1);
+    /* Historical Starfish default; not exposed in settings. */
+    setenv("SS4S_PAUSE_AT_DECODE_TIME", "1", 1);
+    /* Tight drift: 0.5 frame (SS4S reads as percent of interval via maxDrift factor). */
+    setenv("SS4S_SMOOTH_PACING_MAX_DRIFT_FRAMES", "0.5", 1);
 
-    int x100 = session->config.stream.clientRefreshRateX100;
+    /* Prefer measured panel refresh for the PTS grid so display cadence matches the OLED,
+     * not only the host's clientRefreshRateX100 / stream fps (common microstutter source). */
+    int stream_x100 = session->config.stream.clientRefreshRateX100;
+    if (stream_x100 <= 0 && session->config.stream.fps > 0) {
+        stream_x100 = session->config.stream.fps * 100;
+    }
+
+    int x100 = stream_x100;
+    int panel_hz = 0;
+    const char *source = "stream";
+    if (SDL_webOSGetRefreshRate(&panel_hz) && panel_hz >= 20 && panel_hz <= 240) {
+        int panel_x100 = panel_hz * 100;
+        if (stream_x100 <= 0) {
+            x100 = panel_x100;
+            source = "panel";
+        } else {
+            int stream_hz = (stream_x100 + 50) / 100;
+            /* Same ballpark (±2 Hz): anchor PTS to the panel. Far apart: keep stream. */
+            if (abs(stream_hz - panel_hz) <= 2) {
+                x100 = panel_x100;
+                source = "panel";
+            }
+        }
+    }
+
     if (x100 > 0) {
-        /* interval_us = 1e6 * 100 / x100  (e.g. 11988 → ~8341 µs) */
+        /* interval_us = 1e6 * 100 / x100  (e.g. 12000 → 8333 µs) */
         long interval_us = (100000000L + (x100 / 2)) / x100;
         char buf[32];
         snprintf(buf, sizeof(buf), "%ld", interval_us);
         setenv("SS4S_SMOOTH_PACING_INTERVAL_US", buf, 1);
         setenv("SS4S_NDL_PACING_INTERVAL_US", buf, 1);
+        commons_log_info("Session",
+                         "Smooth pacing interval %ld µs from %s (x100=%d, stream_x100=%d, panel=%d Hz)",
+                         interval_us, source, x100, stream_x100, panel_hz);
     } else {
         unsetenv("SS4S_SMOOTH_PACING_INTERVAL_US");
         unsetenv("SS4S_NDL_PACING_INTERVAL_US");
     }
-
-    bool pause_at_decode = cfg == NULL || cfg->pause_at_decode_time;
-    setenv("SS4S_PAUSE_AT_DECODE_TIME", pause_at_decode ? "1" : "0", 1);
 #else
     (void) session;
 #endif
@@ -140,13 +169,13 @@ int session_worker(session_t *session) {
     }
     session_set_state(session, STREAMING_STREAMING);
     bus_pushevent(USER_STREAM_OPEN, NULL, NULL);
-    if (session->config.auto_adjust_bitrate || session->config.soft_recovery) {
+    if (session->config.auto_adjust_bitrate) {
         adaptive_bitrate_config_t abr_config = {
             .gs_client = client,
             .server = server,
             .initial_bitrate = session->config.stream.bitrate,
             .mode = (abr_mode_t) session->config.abr_mode,
-            .recovery_only = session->config.soft_recovery && !session->config.auto_adjust_bitrate,
+            .recovery_only = false,
         };
         session->abr = adaptive_bitrate_start(&abr_config);
     }

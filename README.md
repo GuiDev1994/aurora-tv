@@ -7,7 +7,7 @@ Unofficial fork of [Moonlight TV](https://github.com/mariotaku/moonlight-tv) for
 ## Highlights
 
 - **AMOLED layout** — pure black background, dark surfaces, violet accent.
-- **Native 4K (3840×2160)** streaming with HDR10 when supported.
+- **3.6K (3584×2016)** recommended on LG C5 (stable quality without native-4K cumulative delay); **4K** when the set handles it.
 - **HDR10 (PQ)** over HEVC Main10 (when supported).
 - Bitrate slider up to **300 Mbps**; above **250 Mbps** there is usually no visible gain and packet loss becomes more likely as the link becomes less stable.
 - **Performance stats overlay**, **full on-screen keyboard**, and **virtual mouse** during streaming.
@@ -28,7 +28,7 @@ Unofficial fork of [Moonlight TV](https://github.com/mariotaku/moonlight-tv) for
 
 | Setting | Suggestion |
 |---------|------------|
-| Resolution | **4K** (3840×2160) |
+| Resolution | **3.6K** (3584×2016) on LG C5; **4K** if your set is stable at native 4K |
 | FPS | 60 or 120 |
 | Codec | HEVC (H.265) |
 | Bitrate | Start at **120–180 Mbps**; stay at or below **250 Mbps** for a stable link. Higher values rarely help and can increase packet loss. |

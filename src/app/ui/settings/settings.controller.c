@@ -32,7 +32,6 @@ static const settings_entry_t entries[] = {
         {MAT_SYMBOL_SPORTS_ESPORTS,  translatable("Input Settings"), &settings_pane_input_cls},
         {MAT_SYMBOL_VOLUME_UP,       translatable("Audio Settings"), &settings_pane_audio_cls},
         {MAT_SYMBOL_VIDEO_SETTINGS,  translatable("Video Settings"), &settings_pane_video_cls},
-        {MAT_SYMBOL_HELP,            translatable("About"),          &settings_pane_about_cls},
 };
 static const int entries_len = sizeof(entries) / sizeof(settings_entry_t);
 

@@ -68,7 +68,6 @@ typedef struct session_config_t {
     uint8_t stick_deadzone;
     bool auto_adjust_bitrate;
     int abr_mode;
-    bool soft_recovery;
 } session_config_t;
 
 extern int streaming_errno;

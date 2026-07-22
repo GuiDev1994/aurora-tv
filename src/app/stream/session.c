@@ -280,7 +280,6 @@ void session_config_init(app_t *app, session_config_t *config, const SERVER_DATA
     }
     config->auto_adjust_bitrate = app_config->auto_adjust_bitrate;
     config->abr_mode = app_config->abr_mode;
-    config->soft_recovery = app_config->soft_recovery;
 
     SS4S_VideoCapabilities video_cap = app->ss4s.video_cap;
     SS4S_AudioCapabilities audio_cap = app->ss4s.audio_cap;

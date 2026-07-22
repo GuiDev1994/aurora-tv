@@ -147,14 +147,6 @@ bool streaming_stats_shown() {
     return overlay_showing || overlay_pinned;
 }
 
-/* Refresh the "Controller battery" stat row. */
-static void streaming_refresh_battery(streaming_controller_t *controller) {
-    if (!controller->stats_items.battery) {
-        return;
-    }
-    lv_label_set_text(controller->stats_items.battery, "-");
-}
-
 bool streaming_refresh_stats() {
     streaming_controller_t *controller = current_controller;
     if (!controller) { return false; }
@@ -285,7 +277,7 @@ bool streaming_refresh_stats() {
         lv_label_set_text_fmt(controller->stats_items.host_latency, "-");
         lv_label_set_text_fmt(controller->stats_items.vdec_latency, "-");
     }
-    streaming_refresh_battery(controller);
+
     return true;
 }
 

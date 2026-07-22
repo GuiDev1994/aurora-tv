@@ -19,7 +19,6 @@
 #include "ss4s.h"
 #include "stream/connection/session_connection.h"
 #include "stream/session_priv.h"
-#include "stream/adaptive_bitrate.h"
 #include "app.h"
 
 #include <SDL.h>
@@ -68,85 +67,6 @@ VIDEO_STATS vdec_summary_stats;
 /* Seqlock for vdec_summary_stats: odd while vdec_stat_submit is mid-write. */
 static unsigned vdec_stats_seq;
 VIDEO_INFO vdec_stream_info;
-
-#if defined(TARGET_WEBOS)
-#define SOFT_REC_SUSTAIN_MS 3000u
-#define SOFT_REC_COOLDOWN_MS 20000u
-#define SOFT_REC_HOLD_MS 15000
-#define SOFT_REC_DROP_PERCENT 75
-#define SOFT_REC_RQ_THRESHOLD 2
-#define SOFT_REC_LATENCY_MS 80.0f
-
-static Uint32 soft_rec_high_since = 0;
-static Uint32 soft_rec_cooldown_until = 0;
-
-static void soft_recovery_reset(void) {
-    soft_rec_high_since = 0;
-    soft_rec_cooldown_until = 0;
-}
-
-static bool soft_recovery_is_4k(void) {
-    int w = session != NULL ? session->config.stream.width : 0;
-    int h = session != NULL ? session->config.stream.height : 0;
-    if (vdec_stream_info.width > 0 && vdec_stream_info.height > 0) {
-        w = vdec_stream_info.width;
-        h = vdec_stream_info.height;
-    }
-    return ((int64_t) w * (int64_t) h) >= ((int64_t) 3840 * 2160);
-}
-
-static bool soft_recovery_pressure(const struct VIDEO_STATS *dst) {
-    if (dst->videoRenderQueue >= SOFT_REC_RQ_THRESHOLD) {
-        return true;
-    }
-    float target = (float) vdec_stream_target_fps;
-    if (target < 1.0f) {
-        target = 60.0f;
-    }
-    if (dst->receivedFps >= target * 0.9f && dst->decodedFps < target * 0.85f && dst->submittedFrames > 0) {
-        return true;
-    }
-    if (vdec_stream_info.has_decoder_latency && dst->avgDecoderLatency > SOFT_REC_LATENCY_MS) {
-        return true;
-    }
-    return false;
-}
-
-static void soft_recovery_tick(const struct VIDEO_STATS *dst) {
-    if (session == NULL || !session->config.soft_recovery || session->abr == NULL) {
-        return;
-    }
-    if (!soft_recovery_is_4k()) {
-        soft_rec_high_since = 0;
-        return;
-    }
-    Uint32 now = SDL_GetTicks();
-    if (soft_rec_cooldown_until != 0 && now < soft_rec_cooldown_until) {
-        return;
-    }
-    if (!soft_recovery_pressure(dst)) {
-        soft_rec_high_since = 0;
-        return;
-    }
-    if (soft_rec_high_since == 0) {
-        soft_rec_high_since = now;
-        return;
-    }
-    if (now - soft_rec_high_since < SOFT_REC_SUSTAIN_MS) {
-        return;
-    }
-    if (adaptive_bitrate_request_drop(session->abr, SOFT_REC_DROP_PERCENT, SOFT_REC_HOLD_MS,
-                                      "4K decode backlog")) {
-        commons_log_info("Session",
-                         "Soft recovery: sustained 4K backlog (RQ=%d decodedFps=%.1f latency=%.1fms) "
-                         "→ request %d%% bitrate",
-                         dst->videoRenderQueue, dst->decodedFps, dst->avgDecoderLatency,
-                         SOFT_REC_DROP_PERCENT);
-        soft_rec_cooldown_until = now + SOFT_REC_COOLDOWN_MS;
-    }
-    soft_rec_high_since = 0;
-}
-#endif
 
 static int vdec_delegate_setup(int videoFormat, int width, int height, int redrawRate, void *context, int drFlags);
 
@@ -230,9 +150,6 @@ int vdec_delegate_setup(int videoFormat, int width, int height, int redrawRate, 
     frames_since_idr = 0;
     vdec_stream_target_fps = redrawRate > 0 ? redrawRate : 60;
     vdec_warned_near_buffer_limit = false;
-#if defined(TARGET_WEBOS)
-    soft_recovery_reset();
-#endif
 
     if (videoFormat & VIDEO_FORMAT_MASK_AV1) {
         vdec_stream_info.width = width;
@@ -299,9 +216,6 @@ void vdec_delegate_cleanup(void) {
     buffer = NULL;
     buffer_size = 0;
     buffer_initial_size = 0;
-#if defined(TARGET_WEBOS)
-    soft_recovery_reset();
-#endif
     SS4S_PlayerVideoClose(player);
     session = NULL;
 }
@@ -458,7 +372,7 @@ void vdec_stat_submit(const struct VIDEO_STATS *src, unsigned long now) {
         LiGetEstimatedRttInfo(&dst->rtt, &dst->rttVariance);
     }
 
-    /* Always sample latency/RQ so soft recovery works with the overlay hidden. */
+    /* Always sample latency/RQ for overlay when shown. */
     int latencyUS = 0;
     if (player != NULL && SS4S_PlayerGetVideoLatency(player, 0, &latencyUS)) {
         dst->avgDecoderLatency = (float) latencyUS / 1000.0f;
@@ -474,10 +388,6 @@ void vdec_stat_submit(const struct VIDEO_STATS *src, unsigned long now) {
         dst->videoRenderQueue = -1;
     }
     vdec_stats_write_end();
-
-#if defined(TARGET_WEBOS)
-    soft_recovery_tick(dst);
-#endif
 
     if (show_stats) {
         app_bus_post(session->app, (bus_actionfunc) streaming_refresh_stats, NULL);

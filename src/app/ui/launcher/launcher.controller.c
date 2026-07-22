@@ -657,8 +657,8 @@ static void decoder_error_cb(lv_event_t *e) {
 }
 
 static void open_help(lv_event_t *event) {
-    LV_UNUSED(event);
-    help_dialog_create();
+    launcher_fragment_t *fragment = lv_event_get_user_data(event);
+    help_dialog_create(fragment->global);
 }
 
 static void populate_selected_host(launcher_fragment_t *controller) {

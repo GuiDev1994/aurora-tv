@@ -66,22 +66,6 @@ typedef struct app_settings_t {
      * (e.g. 120 → 11988). When false, presets use integer fps (client_refresh_rate_x100 = 0).
      */
     bool use_ntsc_refresh;
-    /**
-     * webOS NDL/SMP: stamp video PTS on a virtual frame grid instead of wall-clock feed time.
-     * Reduces pan hitching when encode/arrival jitter is high (default true).
-     * When enabled, host presentationTimeUs is mapped into the player PTS when available.
-     */
-    bool smooth_frame_pacing;
-    /**
-     * webOS SMP/Starfish: pass pauseAtDecodeTime in Load payload (default true).
-     * Independent of smooth_frame_pacing (PTS grid). Set false only for latency experiments.
-     */
-    bool pause_at_decode_time;
-    /**
-     * webOS: Phase B soft recovery for ≥4K decode backlog (temporary bitrate drop).
-     * Independent of Flush+IDR. Default true for 1.1.5 device testing.
-     */
-    bool soft_recovery;
     bool auto_adjust_bitrate;
     int abr_mode;
     char *conf_dir;
@@ -109,6 +93,8 @@ extern const size_t audio_config_len;
 #define RES_1080P RES_MERGE(1920, 1080)
 #define RES_1440P RES_MERGE(2560, 1440)
 #define RES_1800P RES_MERGE(3200, 1800)
+/** ~90% of 4K (3584×2016); practical limit on LG C5 without cumulative 4K delay */
+#define RES_3_6K RES_MERGE(3584, 2016)
 #define RES_4K RES_MERGE(3840, 2160)
 
 /** Fixed decode-unit reassembly buffer (megabytes). */

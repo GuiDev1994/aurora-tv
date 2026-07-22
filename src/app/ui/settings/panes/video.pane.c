@@ -161,27 +161,6 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     lv_obj_add_event_cb(hevc_checkbox, idr_refresh_hevc_cb, LV_EVENT_VALUE_CHANGED, controller);
     idr_refresh_state_update(controller);
 
-#if TARGET_WEBOS
-    pref_checkbox(view, locstr("Smooth frame pacing"), &app_configuration->smooth_frame_pacing, false);
-    pref_desc_label(view,
-                    locstr("Stamp video presentation timestamps on a steady frame grid instead of "
-                           "wall-clock feed time. Reduces hitching when camera pans at high bitrate "
-                           "(e.g. 4K HDR HEVC). Disable only for A/B comparison."),
-                    false);
-    pref_checkbox(view, locstr("Pause at decode time (Starfish)"), &app_configuration->pause_at_decode_time, false);
-    pref_desc_label(view,
-                    locstr("Starfish Load flag pauseAtDecodeTime. Leave enabled for normal pacing. "
-                           "Disable only to experiment with lower decode scheduling latency "
-                           "(may increase judder on irregular arrival)."),
-                    false);
-    pref_checkbox(view, locstr("Soft recovery (4K)"), &app_configuration->soft_recovery, false);
-    pref_desc_label(view,
-                    locstr("When decode backlog builds on 4K streams, temporarily lower bitrate so "
-                           "video/input can catch up (no Flush+IDR). Leave enabled for C5 testing; "
-                           "disable to compare."),
-                    false);
-#endif
-
     pref_header(view, locstr("Color"));
     pref_checkbox(view, locstr("Full range YUV (SDR only)"), &app_configuration->force_full_color_range, false);
     pref_desc_label(view,

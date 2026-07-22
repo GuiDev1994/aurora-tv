@@ -2,6 +2,14 @@
 #include "help.dialog.h"
 
 #include "util/i18n.h"
+#include "os_info.h"
+
+#include <stdlib.h>
+#include <stdio.h>
+
+#if TARGET_WEBOS
+#include <SDL.h>
+#endif
 
 static void menu_cancel_cb(lv_event_t *e);
 
@@ -11,7 +19,11 @@ static void help_open_url_cb(lv_event_t *e);
 
 static void add_url_button(lv_obj_t *list, const char *title, const char *url);
 
-lv_obj_t *help_dialog_create() {
+static void add_about_line(lv_obj_t *list, const char *title, const char *value);
+
+static const char *module_id(const SS4S_ModuleInfo *info);
+
+lv_obj_t *help_dialog_create(app_t *app) {
     lv_obj_t *msgbox = lv_msgbox_create(NULL, locstr("Help"), NULL, NULL, true);
     lv_obj_clear_flag(msgbox, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_clear_flag(lv_obj_get_parent(msgbox), LV_OBJ_FLAG_SCROLLABLE);
@@ -32,6 +44,31 @@ lv_obj_t *help_dialog_create() {
     lv_obj_set_style_radius(list, 0, 0);
     lv_obj_set_style_pad_all(list, 0, 0);
 
+    lv_list_add_text(list, locstr("About"));
+    if (app != NULL) {
+        add_about_line(list, locstr("Version"), APP_VERSION);
+        add_about_line(list, locstr("Video decoder"), module_id(app->ss4s.selection.video_module));
+        add_about_line(list, locstr("Audio backend"), module_id(app->ss4s.selection.audio_module));
+        char *os_str = os_info_str(&app->os_info);
+        if (os_str != NULL) {
+            add_about_line(list, locstr("System"), os_str);
+            free(os_str);
+        }
+#if TARGET_WEBOS
+        int panel_w = 0, panel_h = 0;
+        if (SDL_webOSGetPanelResolution(&panel_w, &panel_h) && panel_w > 0 && panel_h > 0) {
+            char resolution_text[32];
+            snprintf(resolution_text, sizeof(resolution_text), "%d × %d", panel_w, panel_h);
+            add_about_line(list, locstr("Screen resolution"), resolution_text);
+        }
+        int panel_fps = 0;
+        if (SDL_webOSGetRefreshRate(&panel_fps) && panel_fps > 0) {
+            char fps_text[16];
+            snprintf(fps_text, sizeof(fps_text), "%d FPS", panel_fps);
+            add_about_line(list, locstr("Refresh rate"), fps_text);
+        }
+#endif
+    }
 
     lv_list_add_text(list, locstr("Input"));
     add_url_button(list, locstr("Gamepad hotkeys"),
@@ -72,4 +109,15 @@ static void add_url_button(lv_obj_t *list, const char *title, const char *url) {
     lv_obj_t *item = lv_list_add_btn(list, NULL, locstr(title));
     lv_obj_add_flag(item, LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_add_event_cb(item, help_open_url_cb, LV_EVENT_CLICKED, (void *) url);
+}
+
+static void add_about_line(lv_obj_t *list, const char *title, const char *value) {
+    char line[192];
+    snprintf(line, sizeof(line), "%s: %s", title, value != NULL ? value : "(null)");
+    lv_list_add_text(list, line);
+}
+
+static const char *module_id(const SS4S_ModuleInfo *info) {
+    const char *id = SS4S_ModuleInfoGetId(info);
+    return id != NULL ? id : "Not available";
 }

@@ -165,15 +165,6 @@ void settings_initialize(app_settings_t *config, char *conf_dir) {
     config->stick_deadzone = 7;
     config->client_refresh_rate_x100 = 0;
     config->use_ntsc_refresh = false;
-#if defined(TARGET_WEBOS)
-    config->smooth_frame_pacing = true;
-    config->pause_at_decode_time = true;
-    config->soft_recovery = true;
-#else
-    config->smooth_frame_pacing = false;
-    config->pause_at_decode_time = true;
-    config->soft_recovery = false;
-#endif
     config->auto_adjust_bitrate = false;
     config->abr_mode = 0;
 
@@ -245,9 +236,6 @@ bool settings_save(app_settings_t *config) {
     ini_write_bool(fp, "show_stats_compact", config->show_stats_compact);
     ini_write_int(fp, "client_refresh_rate_x100", config->client_refresh_rate_x100);
     ini_write_bool(fp, "use_ntsc_refresh", config->use_ntsc_refresh);
-    ini_write_bool(fp, "smooth_frame_pacing", config->smooth_frame_pacing);
-    ini_write_bool(fp, "pause_at_decode_time", config->pause_at_decode_time);
-    ini_write_bool(fp, "soft_recovery", config->soft_recovery);
 
     ini_write_section(fp, "audio");
     ini_write_string(fp, "backend", config->audio_backend);
@@ -391,12 +379,10 @@ static int settings_parse(app_settings_t *config, const char *section, const cha
         }
     } else if (INI_FULL_MATCH("video", "use_ntsc_refresh")) {
         config->use_ntsc_refresh = INI_IS_TRUE(value);
-    } else if (INI_FULL_MATCH("video", "smooth_frame_pacing")) {
-        config->smooth_frame_pacing = INI_IS_TRUE(value);
-    } else if (INI_FULL_MATCH("video", "pause_at_decode_time")) {
-        config->pause_at_decode_time = INI_IS_TRUE(value);
-    } else if (INI_FULL_MATCH("video", "soft_recovery")) {
-        config->soft_recovery = INI_IS_TRUE(value);
+    } else if (INI_FULL_MATCH("video", "smooth_frame_pacing") ||
+               INI_FULL_MATCH("video", "pause_at_decode_time") ||
+               INI_FULL_MATCH("video", "soft_recovery")) {
+        /* Legacy keys ignored (removed from settings). */
     } else if (INI_FULL_MATCH("video", "force_full_color_range")) {
         config->force_full_color_range = INI_IS_TRUE(value);
     } else if (INI_NAME_MATCH("surround")) {
