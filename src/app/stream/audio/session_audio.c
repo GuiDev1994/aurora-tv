@@ -142,7 +142,11 @@ static void aud_feed(char *sampleData, int sampleLength) {
     if (decoder != NULL) {
         int decode_len = opus_multistream_decode(decoder, (unsigned char *) sampleData, sampleLength,
                                                  (opus_int16 *) buffer, frame_size, 0);
-        SS4S_PlayerAudioFeed(player, buffer, unit_size * decode_len);
+        // Negative return = decode error (e.g. corrupt packet); feeding
+        // unit_size * decode_len would pass a huge wrapped size downstream.
+        if (decode_len > 0) {
+            SS4S_PlayerAudioFeed(player, buffer, unit_size * decode_len);
+        }
     } else {
         SS4S_PlayerAudioFeed(player, (unsigned char *) sampleData, sampleLength);
     }
