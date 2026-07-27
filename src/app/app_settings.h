@@ -48,9 +48,11 @@ typedef struct app_settings_t {
     bool virtual_mouse;
     bool swap_abxy;
     bool syskey_capture;
-    bool hdr;   /* HDR10 (PQ) over HEVC Main10 when host and decoder support it */
+    bool hdr;   /* HDR10 (PQ) over HEVC Main10 or AV1 Main10 when host and decoder support it */
     bool force_full_color_range; /* SDR only: request full-range YUV (0-255) from host. No effect when HDR is on. */
     bool hevc;
+    /** Sunshine/Apollo: negotiate AV1 Main8/Main10 when decoder exposes SS4S_VIDEO_AV1. */
+    bool av1;
     /** Periodic HEVC IDR refresh interval in ms (0 = off, min 500 when enabled, step 500). */
     int idr_refresh_interval_ms;
     bool show_stats_on_start;

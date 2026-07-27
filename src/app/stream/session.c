@@ -51,6 +51,12 @@ session_t *session_create(app_t *app, const CONFIGURATION *config, const SERVER_
             session->server->serverInfo.serverCodecModeSupport |= SCM_HEVC_MAIN10;
         }
     }
+    if (session->config.stream.supportedVideoFormats & VIDEO_FORMAT_AV1_MAIN8) {
+        session->server->serverInfo.serverCodecModeSupport |= SCM_AV1_MAIN8;
+    }
+    if (session->config.stream.supportedVideoFormats & VIDEO_FORMAT_AV1_MAIN10) {
+        session->server->serverInfo.serverCodecModeSupport |= SCM_AV1_MAIN10;
+    }
     session->app_id = gs_app->id;
     session->app_name = strdup(gs_app->name);
     session->mutex = SDL_CreateMutex();
@@ -301,6 +307,12 @@ void session_config_init(app_t *app, session_config_t *config, const SERVER_DATA
         config->stream.supportedVideoFormats |= VIDEO_FORMAT_H265;
         if (app_config->hdr && video_cap.hdr) {
             config->stream.supportedVideoFormats |= VIDEO_FORMAT_H265_MAIN10;
+        }
+    }
+    if (app_config->av1 && video_cap.codecs & SS4S_VIDEO_AV1) {
+        config->stream.supportedVideoFormats |= VIDEO_FORMAT_AV1_MAIN8;
+        if (app_config->hdr && video_cap.hdr) {
+            config->stream.supportedVideoFormats |= VIDEO_FORMAT_AV1_MAIN10;
         }
     }
     // If no video format is supported, default to H.264

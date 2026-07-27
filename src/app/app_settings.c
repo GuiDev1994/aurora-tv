@@ -159,6 +159,7 @@ void settings_initialize(app_settings_t *config, char *conf_dir) {
     config->hdr = false;
     config->force_full_color_range = false;
     config->hevc = true;
+    config->av1 = false;
     config->idr_refresh_interval_ms = 0;
     config->show_stats_on_start = false;
     config->show_stats_compact = false;
@@ -231,6 +232,7 @@ bool settings_save(app_settings_t *config) {
     ini_write_bool(fp, "hdr", config->hdr);
     ini_write_bool(fp, "force_full_color_range", config->force_full_color_range);
     ini_write_bool(fp, "hevc", config->hevc);
+    ini_write_bool(fp, "av1", config->av1);
     ini_write_int(fp, "idr_refresh_interval_ms", config->idr_refresh_interval_ms);
     ini_write_bool(fp, "show_stats_on_start", config->show_stats_on_start);
     ini_write_bool(fp, "show_stats_compact", config->show_stats_compact);
@@ -360,6 +362,8 @@ static int settings_parse(app_settings_t *config, const char *section, const cha
         }
     } else if (INI_NAME_MATCH("hevc")) {
         config->hevc = INI_IS_TRUE(value);
+    } else if (INI_FULL_MATCH("video", "av1") || INI_NAME_MATCH("av1")) {
+        config->av1 = INI_IS_TRUE(value);
     } else if (INI_FULL_MATCH("video", "video_simple_sdp")) {
         /* Legacy: ignored; client always negotiates RFI + slices when applicable. */
     } else if (INI_FULL_MATCH("video", "presentation_offset_ms")) {
