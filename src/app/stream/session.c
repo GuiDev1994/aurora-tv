@@ -361,24 +361,15 @@ void session_config_init(app_t *app, session_config_t *config, const SERVER_DATA
  * @param config Moonlight stream configuration
  */
 static void populate_hdr_info_vui(SS4S_VideoHDRInfo *info, const STREAM_CONFIGURATION *config) {
-    switch (config->colorSpace) {
-        case COLORSPACE_REC_601:
-            info->colorPrimaries = 6 /* SMPTE 170M */;
-            info->transferCharacteristics = 6 /* SMPTE 170M */;
-            info->matrixCoefficients = 6 /* SMPTE 170M */;
-            break;
-        case COLORSPACE_REC_709:
-            info->colorPrimaries = 1 /* BT.709 */;
-            info->transferCharacteristics = 1 /* BT.709 */;
-            info->matrixCoefficients = 1 /* BT.709 */;
-            break;
-        case COLORSPACE_REC_2020: {
-            info->colorPrimaries = 9 /* BT.2020 */;
-            info->transferCharacteristics = 16 /* SMPTE ST 2084 */;
-            info->matrixCoefficients = 9 /* BT.2020 NCL */;
-            break;
-        }
-    }
-    info->videoFullRange = config->colorRange == COLOR_RANGE_FULL;
+    (void) config;
+    /*
+     * HDR10 path only (called from streaming_set_hdr when hdr=true).
+     * Always signal BT.2020 + PQ + limited range. Using negotiated Rec.709/601 here
+     * on a PQ stream can skew skin/asphalt hues on webOS NDL (C5).
+     */
+    info->colorPrimaries = 9 /* BT.2020 */;
+    info->transferCharacteristics = 16 /* SMPTE ST 2084 */;
+    info->matrixCoefficients = 9 /* BT.2020 NCL */;
+    info->videoFullRange = 0;
 }
 

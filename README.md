@@ -84,6 +84,7 @@ Thanks to everyone helping improve Aurora:
 
 - [KrisEnigma](https://github.com/KrisEnigma) — UI polish and launcher fixes ([#41](https://github.com/GuiDev1994/aurora-tv/pull/41)–[#49](https://github.com/GuiDev1994/aurora-tv/pull/49))
 - [danbrun](https://github.com/danbrun) — 5.1 surround channel mapping ([#50](https://github.com/GuiDev1994/aurora-tv/pull/50), [#55](https://github.com/GuiDev1994/aurora-tv/pull/55))
+- [mbenitez343](https://github.com/mbenitez343) — Opus decode guard to prevent mid-session audio loss ([#54](https://github.com/GuiDev1994/aurora-tv/pull/54))
 
 ## Credits
 
