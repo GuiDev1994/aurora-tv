@@ -40,9 +40,9 @@ Unofficial fork of [Moonlight TV](https://github.com/mariotaku/moonlight-tv) for
 | Gesture | Action |
 |---------|--------|
 | **Hold Select/Back 4s** | Toggle pinned performance stats |
-| **Hold Start 4s** | Toggle virtual mouse (enable in Settings → Input first) |
+| **Y / Triangle** (virtual mouse on) | Open on-screen keyboard |
 
-Full keyboard: stream overlay menu, or Magic Remote **BLUE** (no gamepad chord — avoids conflict with in-game RB+RS). Virtual mouse: right stick = cursor, left stick = scroll, LT/RT = mouse buttons.
+Full keyboard: stream overlay, Magic Remote **BLUE**, or gamepad **Y** while virtual mouse is active. With the keyboard open: **Y** = Space, **LT** = abc/`&123`, **LB/RB** = Left/Right. Virtual mouse: stream overlay button (or enable in Settings → Input to start enabled); right stick = cursor, left stick = scroll, LT/RT = mouse buttons.
 
 Details, hotkey layout, and stats field reference: [webOS build guide](docs/BUILD_WEBOS.md).
 

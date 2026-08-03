@@ -113,7 +113,22 @@ static void sdl_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
         data->continue_reading = true;
     } else if (SDL_PeepEvents(&e, 1, SDL_GETEVENT, SDL_CONTROLLERAXISMOTION, SDL_CONTROLLERDEVICEREMAPPED) > 0) {
         bool handled_modal = false;
-        if (ui_modal_consumes_input()
+        /* LT edge while soft keyboard is open → toggle abc / &123 */
+        static bool kbd_lt_held = false;
+        if (!streaming_soft_keyboard_shown()) {
+            kbd_lt_held = false;
+        }
+        if (streaming_soft_keyboard_shown() && e.type == SDL_CONTROLLERAXISMOTION
+            && e.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT) {
+            bool down = e.caxis.value > 16000;
+            if (down != kbd_lt_held) {
+                kbd_lt_held = down;
+                if (down) {
+                    soft_keyboard_gamepad_shortcut(SOFT_KBD_GP_TOGGLE_LAYER, true);
+                }
+            }
+            handled_modal = true; /* swallow LT while keyboard is open */
+        } else if (ui_modal_consumes_input()
             && (e.type == SDL_CONTROLLERBUTTONDOWN || e.type == SDL_CONTROLLERBUTTONUP)) {
             bool pressed = (e.cbutton.state == SDL_PRESSED);
             NAVKEY navkey = navkey_from_sdl(&e, &pressed);
@@ -121,6 +136,14 @@ static void sdl_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
                 stream_input_t *si = session_get_input(app->session);
                 short vk = 0;
                 bool close_kbd = false;
+                /* LB / RB → Left / Right (Windows OSK badges) */
+                if (e.cbutton.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER) {
+                    soft_keyboard_gamepad_shortcut(SOFT_KBD_GP_ARROW_LEFT, pressed);
+                    handled_modal = true;
+                } else if (e.cbutton.button == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) {
+                    soft_keyboard_gamepad_shortcut(SOFT_KBD_GP_ARROW_RIGHT, pressed);
+                    handled_modal = true;
+                } else {
                 switch (navkey) {
                     case NAVKEY_UP:
                     case NAVKEY_DOWN:
@@ -152,6 +175,7 @@ static void sdl_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
                         bus_pushevent(USER_CLOSE_SOFT_KEYBOARD, NULL, NULL);
                     }
                     handled_modal = true;
+                }
                 }
             } else if (streaming_soft_keyboard_shown()) {
                 switch (navkey) {

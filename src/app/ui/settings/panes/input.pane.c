@@ -81,9 +81,9 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
                     false);
 
     pref_checkbox(view, locstr("Virtual mouse"), &app_configuration->virtual_mouse, false);
-    pref_desc_label(view, locstr("Hold Start for 4 seconds during streaming to toggle virtual mouse "
-                                 "(enable here first). Right stick moves the cursor, left stick scrolls, "
-                                 "LT/RT are left/right mouse buttons."),
+    pref_desc_label(view, locstr("When enabled, virtual mouse starts active at the beginning of a stream. "
+                                 "Toggle anytime from the stream overlay Virtual Mouse button. "
+                                 "Right stick moves the cursor, left stick scrolls, LT/RT are left/right mouse buttons."),
                     false);
 
     pane->swap_abxy_toggle = pref_checkbox(view, locstr("Swap ABXY buttons"), &app_configuration->swap_abxy, false);
@@ -91,7 +91,8 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
                     false);
 
     pref_desc_label(view, locstr("Hold Select/Back for 4 seconds during streaming to pin or unpin performance stats. "
-                                 "Open the on-screen keyboard from the stream overlay or Magic Remote BLUE."),
+                                 "Open the on-screen keyboard from the stream overlay, Magic Remote BLUE, "
+                                 "or gamepad Y while virtual mouse is active."),
                     false);
 
 #if FEATURE_INPUT_EVMOUSE

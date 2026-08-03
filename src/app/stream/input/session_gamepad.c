@@ -16,14 +16,11 @@
 #define QUIT_BUTTONS (PLAY_FLAG | BACK_FLAG | LB_FLAG | RB_FLAG)
 /** Hold Select (Back) this long to toggle pinned performance stats (Artemis-style). */
 #define GAMEPAD_HOLD_STATS_MS 4000
-/** Hold Start (Play) this long to toggle virtual mouse (Artemis-style). */
-#define GAMEPAD_HOLD_VMOUSE_MS 4000
 
 static bool quit_combo_pressed = false;
 
-/** Hold timers only detect shortcuts; Select/Start are always forwarded to the host. */
+/** Hold timer only detects Select→stats shortcut; Select is still forwarded to the host. */
 static SDL_TimerID stats_hold_timer = 0;
-static SDL_TimerID vmouse_hold_timer = 0;
 
 static void release_buttons(stream_input_t *input, app_gamepad_state_t *gamepad);
 
@@ -42,13 +39,9 @@ static void stream_input_send_buttons(stream_input_t *input, app_gamepad_state_t
 
 static void cancel_stats_hold(void);
 
-static void cancel_vmouse_hold(void);
-
 static void cancel_all_holds(void);
 
 static Uint32 stats_hold_timer_cb(Uint32 interval, void *param);
-
-static Uint32 vmouse_hold_timer_cb(Uint32 interval, void *param);
 
 static bool stream_input_gamepad_sends_moonlight(const stream_input_t *input,
                                                  const app_gamepad_state_t *gamepad) {
@@ -66,6 +59,15 @@ void stream_input_handle_cbutton(stream_input_t *input, const SDL_ControllerButt
     if (gamepad == NULL) {
         return;
     }
+
+    /* Physical Y/Triangle opens the soft keyboard only while virtual mouse is active. */
+    if (event->type == SDL_CONTROLLERBUTTONDOWN && event->button == SDL_CONTROLLER_BUTTON_Y
+        && session_input_is_vmouse_active(&input->vmouse)) {
+        cancel_all_holds();
+        bus_pushevent(USER_OPEN_SOFT_KEYBOARD, NULL, NULL);
+        return;
+    }
+
     int button = 0;
     switch (event->button) {
         case SDL_CONTROLLER_BUTTON_A:
@@ -154,27 +156,15 @@ void stream_input_handle_cbutton(stream_input_t *input, const SDL_ControllerButt
         return;
     }
 
-    /* Select/Start always go to the host. Hold timers only arm client shortcuts. */
+    /* Select always goes to the host. Hold timer only arms the stats shortcut. */
     if (event->type == SDL_CONTROLLERBUTTONDOWN && button == BACK_FLAG) {
-        cancel_vmouse_hold();
         cancel_stats_hold();
         stats_hold_timer = SDL_AddTimer(GAMEPAD_HOLD_STATS_MS, stats_hold_timer_cb, NULL);
     } else if (event->type == SDL_CONTROLLERBUTTONUP && button == BACK_FLAG) {
         cancel_stats_hold();
-    } else if (event->type == SDL_CONTROLLERBUTTONDOWN && button == PLAY_FLAG) {
-        cancel_stats_hold();
-        cancel_vmouse_hold();
-        vmouse_hold_timer = SDL_AddTimer(GAMEPAD_HOLD_VMOUSE_MS, vmouse_hold_timer_cb, NULL);
-    } else if (event->type == SDL_CONTROLLERBUTTONUP && button == PLAY_FLAG) {
-        cancel_vmouse_hold();
-    } else {
+    } else if (button != BACK_FLAG) {
         /* Mixing other buttons with a pending hold cancels the shortcut. */
-        if (button != BACK_FLAG) {
-            cancel_stats_hold();
-        }
-        if (button != PLAY_FLAG) {
-            cancel_vmouse_hold();
-        }
+        cancel_stats_hold();
     }
 
     stream_input_send_buttons(input, gamepad);
@@ -467,16 +457,8 @@ static void cancel_stats_hold(void) {
     }
 }
 
-static void cancel_vmouse_hold(void) {
-    if (vmouse_hold_timer) {
-        SDL_RemoveTimer(vmouse_hold_timer);
-        vmouse_hold_timer = 0;
-    }
-}
-
 static void cancel_all_holds(void) {
     cancel_stats_hold();
-    cancel_vmouse_hold();
 }
 
 static Uint32 stats_hold_timer_cb(Uint32 interval, void *param) {
@@ -485,15 +467,6 @@ static Uint32 stats_hold_timer_cb(Uint32 interval, void *param) {
     stats_hold_timer = 0;
     bus_pushevent(USER_TOGGLE_STATS_PIN, NULL, NULL);
     commons_log_info("Input", "Select held %dms — toggle performance stats", GAMEPAD_HOLD_STATS_MS);
-    return 0;
-}
-
-static Uint32 vmouse_hold_timer_cb(Uint32 interval, void *param) {
-    (void) interval;
-    (void) param;
-    vmouse_hold_timer = 0;
-    bus_pushevent(USER_TOGGLE_VMOUSE, NULL, NULL);
-    commons_log_info("Input", "Start held %dms — toggle virtual mouse", GAMEPAD_HOLD_VMOUSE_MS);
     return 0;
 }
 

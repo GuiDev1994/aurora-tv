@@ -2,7 +2,9 @@
 set -e
 
 install_apt_packages() {
-    apt-get update -qq && apt-get install -y -qq cmake gawk curl git build-essential ca-certificates wget file
+    # Docker Desktop on Windows often resolves Ubuntu mirrors to broken IPv6; force IPv4.
+    apt-get -o Acquire::ForceIPv4=true update -qq && \
+      apt-get -o Acquire::ForceIPv4=true install -y -qq cmake gawk curl git build-essential ca-certificates wget file
 }
 
 if ! install_apt_packages > /dev/null 2>&1; then

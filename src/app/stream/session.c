@@ -153,6 +153,9 @@ bool session_start_input(session_t *session) {
     }
 #endif
     session_input_started(&session->input);
+    if (session->config.vmouse) {
+        session_input_set_vmouse_active(&session->input.vmouse, true);
+    }
     return true;
 }
 
@@ -165,7 +168,7 @@ bool session_has_input(session_t *session) {
 }
 
 void session_toggle_vmouse(session_t *session) {
-    bool value = session->config.vmouse && !session_input_is_vmouse_active(&session->input.vmouse);
+    bool value = !session_input_is_vmouse_active(&session->input.vmouse);
     session_input_set_vmouse_active(&session->input.vmouse, value);
 }
 

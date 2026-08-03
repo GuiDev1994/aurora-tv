@@ -4,11 +4,17 @@
 #include <SDL_stdinc.h>
 #include <math.h>
 
-#define VMOUSE_SCROLL_SENSITIVITY 4.0
+/** Tuned for smooth but usable left-stick scrolling (not page jumps). */
+#define VMOUSE_SCROLL_SENSITIVITY 1.85
+#define VMOUSE_SCROLL_DEADZONE    5500
+#define VMOUSE_SCROLL_MAX_TICK    58
+#define VMOUSE_SCROLL_DIVIDER     14.0
 
 static short calc_mouse_movement(short axis);
 
 static short calc_scroll_delta(short axis);
+
+static short clamp_scroll_tick(double value);
 
 static Uint32 vmouse_timer_callback(Uint32 interval, void *param);
 
@@ -83,23 +89,30 @@ static Uint32 vmouse_timer_callback(Uint32 interval, void *param) {
     }
 
     if (vmouse->state.scroll_x || vmouse->state.scroll_y) {
-        double scroll_x = vmouse->state.scroll_x;
-        double scroll_y = vmouse->state.scroll_y;
-        double abs_sx = SDL_fabs(scroll_x), abs_sy = SDL_fabs(scroll_y);
-        if (scroll_y != 0) {
-            LiSendHighResScrollEvent((short) (abs_sy > 1 ? -scroll_y : -scroll_y / abs_sy));
+        double scroll_x = vmouse->state.scroll_x / VMOUSE_SCROLL_DIVIDER;
+        double scroll_y = vmouse->state.scroll_y / VMOUSE_SCROLL_DIVIDER;
+        short sy = clamp_scroll_tick(scroll_y);
+        short sx = clamp_scroll_tick(scroll_x);
+        if (sy != 0) {
+            /* Positive high-res scroll = wheel up / content moves down naturally with stick-up. */
+            LiSendHighResScrollEvent(sy);
         }
-        if (scroll_x != 0) {
-            LiSendHighResHScrollEvent((short) (abs_sx > 1 ? scroll_x : scroll_x / abs_sx));
+        if (sx != 0) {
+            LiSendHighResHScrollEvent(sx);
         }
     }
 
-    double activity = SDL_max(SDL_max(abs_x, abs_y),
-                              SDL_max(SDL_fabs(vmouse->state.scroll_x), SDL_fabs(vmouse->state.scroll_y)));
+    double move_activity = SDL_max(abs_x, abs_y);
+    double scroll_activity = SDL_max(SDL_fabs(vmouse->state.scroll_x), SDL_fabs(vmouse->state.scroll_y))
+                             / VMOUSE_SCROLL_DIVIDER;
+    double activity = SDL_max(move_activity, scroll_activity);
     if (activity <= 0) {
         return 0;
     }
-    return SDL_max(5, SDL_min(5 / activity, 20));
+    if (move_activity <= 0 && scroll_activity > 0) {
+        return (Uint32) SDL_max(12, SDL_min(28, (int) (18 / SDL_max(0.25, scroll_activity))));
+    }
+    return (Uint32) SDL_max(5, SDL_min(5 / activity, 20));
 }
 
 static short calc_mouse_movement(short axis) {
@@ -110,11 +123,35 @@ static short calc_mouse_movement(short axis) {
 }
 
 static short calc_scroll_delta(short axis) {
-    if (axis == 0) {
+    short abs_axis = (short) (axis > 0 ? axis : -axis);
+    if (abs_axis < VMOUSE_SCROLL_DEADZONE) {
         return 0;
     }
-    double normalized = axis / 32767.0;
-    double scaled = normalized * (VMOUSE_SCROLL_SENSITIVITY / 4.0) * 2.0;
-    double curved = (scaled >= 0 ? 1.0 : -1.0) * pow(SDL_fabs(scaled), 3.0);
-    return (short) (curved * 32767.0);
+    double t = (abs_axis - VMOUSE_SCROLL_DEADZONE) / (32767.0 - VMOUSE_SCROLL_DEADZONE);
+    if (t > 1.0) {
+        t = 1.0;
+    }
+    double curved = t * t * VMOUSE_SCROLL_SENSITIVITY;
+    short mag = (short) (curved * 160.0);
+    if (mag < 1) {
+        mag = 1;
+    }
+    return (short) (axis > 0 ? mag : -mag);
+}
+
+static short clamp_scroll_tick(double value) {
+    if (value == 0) {
+        return 0;
+    }
+    short v = (short) value;
+    if (v == 0) {
+        v = value > 0 ? 1 : -1;
+    }
+    if (v > VMOUSE_SCROLL_MAX_TICK) {
+        return VMOUSE_SCROLL_MAX_TICK;
+    }
+    if (v < -VMOUSE_SCROLL_MAX_TICK) {
+        return (short) -VMOUSE_SCROLL_MAX_TICK;
+    }
+    return v;
 }
