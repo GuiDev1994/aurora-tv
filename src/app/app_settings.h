@@ -68,6 +68,11 @@ typedef struct app_settings_t {
      * (e.g. 120 → 11988). When false, presets use integer fps (client_refresh_rate_x100 = 0).
      */
     bool use_ntsc_refresh;
+    /**
+     * webOS: host PTS + small presentation slack (smoother, slight latency).
+     * Off = wall-clock PTS (default after C5 A/B). Does not use the 0.5-frame grid.
+     */
+    bool smooth_presentation;
     bool auto_adjust_bitrate;
     int abr_mode;
     char *conf_dir;

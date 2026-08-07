@@ -181,6 +181,15 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
                            "(SMPTE ST 2084 standard). Disable if SDR colors look washed out."),
                     false);
 
+#if TARGET_WEBOS
+    pref_header(view, locstr("Presentation"));
+    pref_checkbox(view, locstr("Smooth presentation"), &app_configuration->smooth_presentation, false);
+    pref_desc_label(view,
+                    locstr("Uses host frame timestamps with a small display slack. "
+                           "Slightly higher latency; may reduce microstutter. Default off."),
+                    false);
+#endif
+
     return view;
 }
 

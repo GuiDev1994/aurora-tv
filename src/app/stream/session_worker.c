@@ -13,27 +13,64 @@
 #include "app_session.h"
 #include "backend/pcmanager/worker/worker.h"
 #include "app_settings.h"
+#include "app.h"
 
 #include <stdlib.h>
 #include <stdio.h>
 
+#if TARGET_WEBOS
+#include <SDL.h>
+#endif
+
 static void session_apply_smooth_pacing_env(const session_t *session) {
 #if TARGET_WEBOS
-    /*
-     * Diagnostic A/B (v1.1.10+): microstutters persist in BOTH HDR and SDR with
-     * smooth pacing on (including host-PTS-only). Overlay FD/RTT stay flat while
-     * judder is visible — so presentation PTS rewriting is the next suspect.
-     * Disable the grid entirely; decoder uses wall-clock PTS.
-     */
-    setenv("SS4S_SMOOTH_PACING", "0", 1);
-    setenv("SS4S_NDL_SMOOTH_PACING", "0", 1);
-    unsetenv("SS4S_SMOOTH_PACING_HOST_ONLY");
     setenv("SS4S_PAUSE_AT_DECODE_TIME", "1", 1);
     unsetenv("SS4S_SMOOTH_PACING_INTERVAL_US");
     unsetenv("SS4S_NDL_PACING_INTERVAL_US");
+    unsetenv("SS4S_SMOOTH_PACING_MAX_DRIFT_FRAMES");
+
+    const bool smooth = app_configuration != NULL && app_configuration->smooth_presentation;
+    if (!smooth) {
+        setenv("SS4S_SMOOTH_PACING", "0", 1);
+        setenv("SS4S_NDL_SMOOTH_PACING", "0", 1);
+        unsetenv("SS4S_SMOOTH_PACING_HOST_ONLY");
+        unsetenv("SS4S_PRESENTATION_OFFSET_US");
+        commons_log_info("Session", "Smooth presentation OFF (wall-clock PTS)");
+        (void) session;
+        return;
+    }
+
+    /* Host PTS only — never re-enable the 0.5-frame synthetic grid. */
+    setenv("SS4S_SMOOTH_PACING", "1", 1);
+    setenv("SS4S_NDL_SMOOTH_PACING", "1", 1);
+    setenv("SS4S_SMOOTH_PACING_HOST_ONLY", "1", 1);
+
+    int stream_x100 = session->config.stream.clientRefreshRateX100;
+    if (stream_x100 <= 0 && session->config.stream.fps > 0) {
+        stream_x100 = session->config.stream.fps * 100;
+    }
+    int x100 = stream_x100;
+    int panel_hz = 0;
+    if (x100 <= 0 && SDL_webOSGetRefreshRate(&panel_hz) && panel_hz >= 20 && panel_hz <= 240) {
+        x100 = panel_hz * 100;
+    }
+    if (x100 <= 0) {
+        x100 = 6000;
+    }
+
+    /* 0.75 frame slack, clamp 2–12 ms. */
+    long offset_us = (75000000L + (x100 / 2)) / x100;
+    if (offset_us < 2000) {
+        offset_us = 2000;
+    } else if (offset_us > 12000) {
+        offset_us = 12000;
+    }
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%ld", offset_us);
+    setenv("SS4S_PRESENTATION_OFFSET_US", buf, 1);
     commons_log_info("Session",
-                     "Smooth pacing OFF (wall-clock PTS) — A/B for SDR/HDR microstutter");
-    (void) session;
+                     "Smooth presentation ON (host PTS + %ld µs slack, x100=%d)",
+                     offset_us, x100);
 #else
     (void) session;
 #endif

@@ -1,7 +1,7 @@
 # Smooth presentation (host PTS + slack) — webOS
 
 **Date:** 2026-08-07  
-**Status:** Approved (design conversation); pending user review of this file  
+**Status:** Approved — implementing (no version bump until user tests) 
 **Version target:** next (post v1.1.11)
 
 ## Problem
