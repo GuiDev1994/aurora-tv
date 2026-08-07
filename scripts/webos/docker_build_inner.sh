@@ -39,12 +39,14 @@ fi
 cd /tmp
 if [ ! -d arm-webos-linux-gnueabi_sdk-buildroot ] || \
    [ ! -f arm-webos-linux-gnueabi_sdk-buildroot/share/buildroot/toolchainfile.cmake ]; then
-    if [ ! -f arm-webos-linux-gnueabi_sdk-buildroot.tar.gz ]; then
-        echo "Downloading webOS SDK..."
-        curl -sL -O https://github.com/openlgtv/buildroot-nc4/releases/download/webos-b17b4cc/arm-webos-linux-gnueabi_sdk-buildroot.tar.gz
+    # Match CI / upstream (webos-a38c582): artifacts are suffixed with host arch.
+    SDK_ARCHIVE=arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz
+    if [ ! -f "${SDK_ARCHIVE}" ]; then
+        echo "Downloading webOS SDK (webos-a38c582)..."
+        curl -sL -O "https://github.com/openlgtv/buildroot-nc4/releases/download/webos-a38c582/${SDK_ARCHIVE}"
     fi
     echo "Extracting SDK..."
-    tar -xzf arm-webos-linux-gnueabi_sdk-buildroot.tar.gz
+    tar -xzf "${SDK_ARCHIVE}"
     find arm-webos-linux-gnueabi_sdk-buildroot -type f \( -name '*.sh' -o -name 'relocate-sdk' \) -exec sed -i 's/\r$//' {} +
     ./arm-webos-linux-gnueabi_sdk-buildroot/relocate-sdk.sh
 fi

@@ -45,6 +45,7 @@ static int aud_init(int audioConfiguration, const POPUS_MULTISTREAM_CONFIGURATIO
             return -1;
         }
         codecDataLen = opus_head_serialize(opusConfig, buffer);
+        commons_log_info("Session", "Audio path: Opus passthrough (%d ch)", opusConfig->channelCount);
     } else {
         int rc;
         decoder = opus_multistream_decoder_create(opusConfig->sampleRate, opusConfig->channelCount, opusConfig->streams,
@@ -61,6 +62,7 @@ static int aud_init(int audioConfiguration, const POPUS_MULTISTREAM_CONFIGURATIO
             decoder = NULL;
             return -1;
         }
+        commons_log_info("Session", "Audio path: client Opus→PCM (%d ch)", opusConfig->channelCount);
     }
     audio_stream_info.format = SS4S_AudioCodecName(codec);
     switch (audioConfiguration) {
@@ -100,16 +102,27 @@ static void aud_cleanup() {
 }
 
 static void aud_feed(char *sampleData, int sampleLength) {
+    SS4S_AudioFeedResult result;
     if (decoder != NULL) {
         int decode_len = opus_multistream_decode(decoder, (unsigned char *) sampleData, sampleLength,
                                                  (opus_int16 *) buffer, frame_size, 0);
         // Negative return = decode error (e.g. corrupt packet); feeding
         // unit_size * decode_len would pass a huge wrapped size downstream.
-        if (decode_len > 0) {
-            SS4S_PlayerAudioFeed(player, buffer, unit_size * decode_len);
+        if (decode_len <= 0) {
+            audio_stream_info.feedFailures++;
+            return;
         }
+        result = SS4S_PlayerAudioFeed(player, buffer, unit_size * decode_len);
     } else {
-        SS4S_PlayerAudioFeed(player, (unsigned char *) sampleData, sampleLength);
+        result = SS4S_PlayerAudioFeed(player, (unsigned char *) sampleData, sampleLength);
+    }
+    if (result != SS4S_AUDIO_FEED_OK) {
+        audio_stream_info.feedFailures++;
+        /* Rate-limit: first failure and every 50th thereafter. */
+        if (audio_stream_info.feedFailures == 1 || (audio_stream_info.feedFailures % 50) == 0) {
+            commons_log_warn("Session", "Audio feed failure #%u result=%d",
+                             (unsigned) audio_stream_info.feedFailures, (int) result);
+        }
     }
 }
 

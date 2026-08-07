@@ -17,59 +17,23 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#if TARGET_WEBOS
-#include <SDL.h>
-#endif
-
 static void session_apply_smooth_pacing_env(const session_t *session) {
 #if TARGET_WEBOS
-    /* Always-on aggressive pacing (no user toggle). */
-    setenv("SS4S_SMOOTH_PACING", "1", 1);
-    setenv("SS4S_NDL_SMOOTH_PACING", "1", 1);
-    /* Historical Starfish default; not exposed in settings. */
+    /*
+     * Diagnostic A/B (v1.1.10+): microstutters persist in BOTH HDR and SDR with
+     * smooth pacing on (including host-PTS-only). Overlay FD/RTT stay flat while
+     * judder is visible — so presentation PTS rewriting is the next suspect.
+     * Disable the grid entirely; decoder uses wall-clock PTS.
+     */
+    setenv("SS4S_SMOOTH_PACING", "0", 1);
+    setenv("SS4S_NDL_SMOOTH_PACING", "0", 1);
+    unsetenv("SS4S_SMOOTH_PACING_HOST_ONLY");
     setenv("SS4S_PAUSE_AT_DECODE_TIME", "1", 1);
-    /* Tight drift: 0.5 frame (SS4S reads as percent of interval via maxDrift factor). */
-    setenv("SS4S_SMOOTH_PACING_MAX_DRIFT_FRAMES", "0.5", 1);
-
-    /* Prefer measured panel refresh for the PTS grid so display cadence matches the OLED,
-     * not only the host's clientRefreshRateX100 / stream fps (common microstutter source). */
-    int stream_x100 = session->config.stream.clientRefreshRateX100;
-    if (stream_x100 <= 0 && session->config.stream.fps > 0) {
-        stream_x100 = session->config.stream.fps * 100;
-    }
-
-    int x100 = stream_x100;
-    int panel_hz = 0;
-    const char *source = "stream";
-    if (SDL_webOSGetRefreshRate(&panel_hz) && panel_hz >= 20 && panel_hz <= 240) {
-        int panel_x100 = panel_hz * 100;
-        if (stream_x100 <= 0) {
-            x100 = panel_x100;
-            source = "panel";
-        } else {
-            int stream_hz = (stream_x100 + 50) / 100;
-            /* Same ballpark (±2 Hz): anchor PTS to the panel. Far apart: keep stream. */
-            if (abs(stream_hz - panel_hz) <= 2) {
-                x100 = panel_x100;
-                source = "panel";
-            }
-        }
-    }
-
-    if (x100 > 0) {
-        /* interval_us = 1e6 * 100 / x100  (e.g. 12000 → 8333 µs) */
-        long interval_us = (100000000L + (x100 / 2)) / x100;
-        char buf[32];
-        snprintf(buf, sizeof(buf), "%ld", interval_us);
-        setenv("SS4S_SMOOTH_PACING_INTERVAL_US", buf, 1);
-        setenv("SS4S_NDL_PACING_INTERVAL_US", buf, 1);
-        commons_log_info("Session",
-                         "Smooth pacing interval %ld µs from %s (x100=%d, stream_x100=%d, panel=%d Hz)",
-                         interval_us, source, x100, stream_x100, panel_hz);
-    } else {
-        unsetenv("SS4S_SMOOTH_PACING_INTERVAL_US");
-        unsetenv("SS4S_NDL_PACING_INTERVAL_US");
-    }
+    unsetenv("SS4S_SMOOTH_PACING_INTERVAL_US");
+    unsetenv("SS4S_NDL_PACING_INTERVAL_US");
+    commons_log_info("Session",
+                     "Smooth pacing OFF (wall-clock PTS) — A/B for SDR/HDR microstutter");
+    (void) session;
 #else
     (void) session;
 #endif
@@ -107,9 +71,14 @@ int session_worker(session_t *session) {
     const char *surround_params = NULL;
 #if TARGET_WEBOS
     if (session->config.stream.audioConfiguration == AUDIO_CONFIGURATION_51_SURROUND) {
-        // Send standard channel order so all hosts use the same layout.
-        // This is then remapped to the WebOS order in opus_fix.c from SS4S.
-        surround_params = "642012345";
+        // webOS NDL Opus passthrough only accepts mapping {0,1,4,5,2,3}
+        // (FL FR SL SR FC LFE). Asking the host for SDL order (012345) forces
+        // SS4S opus_fix re-encode every frame and causes momentary dropouts.
+        // 6 ch, 4 streams, 2 coupled, FL FR SL SR FC LFE:
+        surround_params = "642014523";
+        commons_log_info("Session",
+                         "5.1 surroundParams=%s (NDL passthrough layout; skips opus_fix)",
+                         surround_params);
     }
 #endif
     short gamepad_mask = app_input_gamepads_mask(&app->input);

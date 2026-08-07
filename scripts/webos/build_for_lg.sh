@@ -6,8 +6,8 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-SDK_VERSION="webos-b17b4cc"
-SDK_ARCHIVE="arm-webos-linux-gnueabi_sdk-buildroot.tar.gz"
+SDK_VERSION="webos-a38c582"
+SDK_ARCHIVE="arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz"
 SDK_URL="https://github.com/openlgtv/buildroot-nc4/releases/download/${SDK_VERSION}/${SDK_ARCHIVE}"
 BUILD_TYPE="${CMAKE_BUILD_TYPE:-Release}"
 SDK_DIR="${WEBOS_SDK_DIR:-/tmp/arm-webos-linux-gnueabi_sdk-buildroot}"

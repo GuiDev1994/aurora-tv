@@ -226,7 +226,12 @@ bool streaming_refresh_stats() {
             (void) first;
         }
         if (len > 0 && (size_t) len < sizeof(stats_line)) {
-            snprintf(stats_line + len, sizeof(stats_line) - (size_t) len, " | %s", audio_ch);
+            if (audio_stream_info.feedFailures > 0) {
+                snprintf(stats_line + len, sizeof(stats_line) - (size_t) len,
+                         " | %s AF %u", audio_ch, (unsigned) audio_stream_info.feedFailures);
+            } else {
+                snprintf(stats_line + len, sizeof(stats_line) - (size_t) len, " | %s", audio_ch);
+            }
         }
         lv_label_set_text(controller->stats_compact_label, stats_line);
         /* Quality dot: green ≤25ms, yellow ≤30ms, red >30ms */
