@@ -17,23 +17,48 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-static void session_apply_smooth_pacing_env(const session_t *session) {
+static void session_apply_decoder_env(const session_t *session) {
 #if TARGET_WEBOS
-    /*
-     * Diagnostic A/B (v1.1.10+): microstutters persist in BOTH HDR and SDR with
-     * smooth pacing on (including host-PTS-only). Overlay FD/RTT stay flat while
-     * judder is visible — so presentation PTS rewriting is the next suspect.
-     * Disable the grid entirely; decoder uses wall-clock PTS.
-     */
     setenv("SS4S_SMOOTH_PACING", "0", 1);
     setenv("SS4S_NDL_SMOOTH_PACING", "0", 1);
     unsetenv("SS4S_SMOOTH_PACING_HOST_ONLY");
-    setenv("SS4S_PAUSE_AT_DECODE_TIME", "1", 1);
+    unsetenv("SS4S_PRESENTATION_OFFSET_US");
     unsetenv("SS4S_SMOOTH_PACING_INTERVAL_US");
     unsetenv("SS4S_NDL_PACING_INTERVAL_US");
+    unsetenv("SS4S_SMOOTH_PACING_MAX_DRIFT_FRAMES");
+    setenv("SS4S_PAUSE_AT_DECODE_TIME", "1", 1);
+
+    const bool smooth = app_configuration != NULL && app_configuration->stream_pacing == 1;
+    if (!smooth) {
+        setenv("SS4S_PANEL_PHASE_PACING", "0", 1);
+        unsetenv("SS4S_PANEL_PHASE_INTERVAL_US");
+        commons_log_info("Session", "Stream pacing: low latency (wall-clock PTS)");
+        (void) session;
+        return;
+    }
+
+    int x100 = 0;
+    int panel_hz = 0;
+    if (SDL_webOSGetRefreshRate(&panel_hz) && panel_hz >= 20 && panel_hz <= 240) {
+        x100 = panel_hz * 100;
+    } else if (session->config.stream.clientRefreshRateX100 > 0) {
+        x100 = session->config.stream.clientRefreshRateX100;
+    } else if (session->config.stream.fps > 0) {
+        x100 = session->config.stream.fps * 100;
+    } else {
+        x100 = 6000;
+    }
+    long interval_us = (100000000L + (x100 / 2)) / x100;
+    if (interval_us < 1000) interval_us = 1000;
+    if (interval_us > 100000) interval_us = 100000;
+
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%ld", interval_us);
+    setenv("SS4S_PANEL_PHASE_PACING", "1", 1);
+    setenv("SS4S_PANEL_PHASE_INTERVAL_US", buf, 1);
     commons_log_info("Session",
-                     "Smooth pacing OFF (wall-clock PTS) — A/B for SDR/HDR microstutter");
-    (void) session;
+                     "Stream pacing: smooth (panel phase interval=%ld µs, x100=%d)",
+                     interval_us, x100);
 #else
     (void) session;
 #endif
@@ -105,7 +130,7 @@ int session_worker(session_t *session) {
     SS4S_PlayerSetViewportSize(session->player, app->ui.width, app->ui.height);
     SS4S_PlayerSetUserdata(session->player, app);
 
-    session_apply_smooth_pacing_env(session);
+    session_apply_decoder_env(session);
     session_video_prepare_stream();
 
     int startResult = LiStartConnection(&server->serverInfo, &session->config.stream,
