@@ -199,10 +199,10 @@ bool streaming_refresh_stats() {
         }
 
         int len = snprintf(stats_line, sizeof(stats_line),
-                           "%dx%d %s%s FPS %.1f "
+                           "%dx%d %s%s FPS Rx %.1f De %.1f "
                            "N %u \xb1 %ums FD %.2f%% BW %.2f Mbps",
                            w, h, codec, hdr_suffix,
-                           dst->receivedFps,
+                           dst->receivedFps, dst->decodedFps,
                            (unsigned) dst->rtt, (unsigned) dst->rttVariance,
                            lossPct, bitrateMbps);
         if (len > 0 && (size_t) len < sizeof(stats_line) && (have_render || have_decode || have_encode)) {
