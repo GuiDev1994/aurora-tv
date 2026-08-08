@@ -166,7 +166,7 @@ void settings_initialize(app_settings_t *config, char *conf_dir) {
     config->stick_deadzone = 7;
     config->client_refresh_rate_x100 = 0;
     config->use_ntsc_refresh = false;
-    config->smooth_presentation = false;
+    config->stream_pacing = 0;
     config->auto_adjust_bitrate = false;
     config->abr_mode = 0;
 
@@ -239,7 +239,7 @@ bool settings_save(app_settings_t *config) {
     ini_write_bool(fp, "show_stats_compact", config->show_stats_compact);
     ini_write_int(fp, "client_refresh_rate_x100", config->client_refresh_rate_x100);
     ini_write_bool(fp, "use_ntsc_refresh", config->use_ntsc_refresh);
-    ini_write_bool(fp, "smooth_presentation", config->smooth_presentation);
+    ini_write_string(fp, "stream_pacing", config->stream_pacing == 1 ? "smooth" : "latency");
 
     ini_write_section(fp, "audio");
     ini_write_string(fp, "backend", config->audio_backend);
@@ -385,10 +385,11 @@ static int settings_parse(app_settings_t *config, const char *section, const cha
         }
     } else if (INI_FULL_MATCH("video", "use_ntsc_refresh")) {
         config->use_ntsc_refresh = INI_IS_TRUE(value);
-    } else if (INI_FULL_MATCH("video", "smooth_presentation")) {
-        config->smooth_presentation = INI_IS_TRUE(value);
-    } else if (INI_FULL_MATCH("video", "smooth_frame_pacing") ||
-               INI_FULL_MATCH("video", "pause_at_decode_time") ||
+    } else if (INI_FULL_MATCH("video", "stream_pacing")) {
+        config->stream_pacing = (strcmp(value, "smooth") == 0) ? 1 : 0;
+    } else if (INI_FULL_MATCH("video", "pause_at_decode_time") ||
+               INI_FULL_MATCH("video", "smooth_presentation") ||
+               INI_FULL_MATCH("video", "smooth_frame_pacing") ||
                INI_FULL_MATCH("video", "soft_recovery")) {
         /* Legacy keys ignored (removed from settings). */
     } else if (INI_FULL_MATCH("video", "force_full_color_range")) {

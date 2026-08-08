@@ -183,10 +183,15 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
 
 #if TARGET_WEBOS
     pref_header(view, locstr("Presentation"));
-    pref_checkbox(view, locstr("Smooth presentation"), &app_configuration->smooth_presentation, false);
+    pref_dropdown_int_entry_t pacing_entries[2] = {
+        { .name = locstr("Low latency"), .value = 0 },
+        { .name = locstr("Smooth"), .value = 1 },
+    };
+    pref_dropdown_int(view, pacing_entries, 2, &app_configuration->stream_pacing, NULL);
     pref_desc_label(view,
-                    locstr("Uses host frame timestamps with a small display slack. "
-                           "Slightly higher latency; may reduce microstutter. Default off."),
+                    locstr("Low latency matches v1.1.11 (wall-clock). "
+                           "Smooth aligns frames to the TV refresh phase "
+                           "(~½–1 frame latency) to reduce camera-pan judder."),
                     false);
 #endif
 

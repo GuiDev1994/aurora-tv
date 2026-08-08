@@ -69,10 +69,10 @@ typedef struct app_settings_t {
      */
     bool use_ntsc_refresh;
     /**
-     * webOS: host PTS + small presentation slack (smoother, slight latency).
-     * Off = wall-clock PTS (default after C5 A/B). Does not use the 0.5-frame grid.
+     * webOS stream presentation pacing: 0 = latency (wall-clock), 1 = smooth (panel phase).
+     * Default 0. Persisted as video.stream_pacing = latency|smooth.
      */
-    bool smooth_presentation;
+    int stream_pacing;
     bool auto_adjust_bitrate;
     int abr_mode;
     char *conf_dir;
