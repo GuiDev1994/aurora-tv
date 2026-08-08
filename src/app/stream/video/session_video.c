@@ -383,8 +383,7 @@ void vdec_stat_submit(const struct VIDEO_STATS *src, unsigned long now) {
             target = session->config.stream.clientRefreshRateX100 / 100.0f;
         }
         const float threshold = target * 0.97f;
-        const bool low = (dst->receivedFps > 1.0f && dst->receivedFps < threshold) ||
-                         (dst->decodedFps > 1.0f && dst->decodedFps < threshold);
+        const bool low = dst->receivedFps < threshold || dst->decodedFps < threshold;
         if (low) {
             vdec_panel_phase_low_fps_ms += (unsigned) delta;
         } else {
