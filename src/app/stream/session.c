@@ -267,6 +267,14 @@ void session_config_init(app_t *app, session_config_t *config, const SERVER_DATA
                          const CONFIGURATION *app_config) {
     CONFIGURATION resolved = *app_config;
     settings_reconcile_refresh_rate(&resolved);
+#if TARGET_WEBOS
+    if (resolved.stream.fps > 120) {
+        resolved.stream.fps = 120;
+        if (resolved.client_refresh_rate_x100 > 12000) {
+            resolved.client_refresh_rate_x100 = resolved.use_ntsc_refresh ? 11988 : 0;
+        }
+    }
+#endif
 
     config->stream = resolved.stream;
     if (resolved.client_refresh_rate_x100 > 0) {

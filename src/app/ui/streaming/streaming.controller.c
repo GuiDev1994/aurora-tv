@@ -17,6 +17,7 @@
 #include "logging.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static void exit_streaming(lv_event_t *event);
@@ -104,23 +105,6 @@ static const char *streaming_codec_compact_text(const char *fmt) {
     return fmt;
 }
 
-static float streaming_render_fps(float decodedFps) {
-    float renderFps = decodedFps;
-#if defined(TARGET_WEBOS)
-    int displayRate = 60;
-    if (SDL_webOSGetRefreshRate(&displayRate) && displayRate > 0 && renderFps > (float) displayRate) {
-        renderFps = (float) displayRate;
-    }
-#else
-    SDL_DisplayMode mode;
-    if (SDL_GetCurrentDisplayMode(0, &mode) == 0 && mode.refresh_rate > 0
-        && renderFps > (float) mode.refresh_rate) {
-        renderFps = (float) mode.refresh_rate;
-    }
-#endif
-    return renderFps;
-}
-
 const lv_fragment_class_t streaming_controller_class = {
         .constructor_cb = constructor,
         .destructor_cb = controller_dtor,
@@ -167,6 +151,7 @@ bool streaming_refresh_stats() {
         float lossPct = (dst->totalFrames > 0)
             ? (float) dst->networkDroppedFrames / (float) dst->totalFrames * 100.0f
             : 0.0f;
+        /* receivedBytes*8 / (delta_ms/1000) is bits/s; Mbps = bps / 1e6. */
         float bitrateMbps = (float) dst->currentBitrateKbps / 1000000.0f;
 
         float hostMs = 0.0f;
@@ -199,10 +184,10 @@ bool streaming_refresh_stats() {
         }
 
         int len = snprintf(stats_line, sizeof(stats_line),
-                           "%dx%d %s%s FPS Rx %.1f De %.1f "
-                           "N %u \xb1 %ums FD %.2f%% BW %.2f Mbps",
+                           "%dx%d %s%s FPS %.1f "
+                           "RTT %u/%u ms FD %.2f%% BW %.1f Mbps",
                            w, h, codec, hdr_suffix,
-                           dst->receivedFps, dst->decodedFps,
+                           dst->decodedFps,
                            (unsigned) dst->rtt, (unsigned) dst->rttVariance,
                            lossPct, bitrateMbps);
         if (len > 0 && (size_t) len < sizeof(stats_line) && (have_render || have_decode || have_encode)) {
@@ -255,11 +240,10 @@ bool streaming_refresh_stats() {
     }
     lv_label_set_text_fmt(controller->stats_items.audio, "%s, %s (%s)", audio_stream_info.format,
                           audio_stream_info.channels, SS4S_ModuleInfoGetId(app->ss4s.selection.audio_module));
-    lv_label_set_text_fmt(controller->stats_items.rtt, "%d ms (var. %d ms)", dst->rtt, dst->rttVariance);
-    lv_label_set_text_fmt(controller->stats_items.net_fps, "%.2f FPS", dst->receivedFps);
-    float renderFps = streaming_render_fps(dst->decodedFps);
-    lv_label_set_text_fmt(controller->stats_items.render_fps, "%.2f FPS", renderFps);
-    lv_label_set_text_fmt(controller->stats_items.bitrate, "%u Mbps", dst->currentBitrateKbps / 1000000);
+    lv_label_set_text_fmt(controller->stats_items.rtt, "%u/%u ms", (unsigned) dst->rtt, (unsigned) dst->rttVariance);
+    lv_label_set_text_fmt(controller->stats_items.render_fps, "%.2f FPS", dst->decodedFps);
+    lv_label_set_text_fmt(controller->stats_items.bitrate, "%.1f Mbps",
+                          (float) dst->currentBitrateKbps / 1000000.0f);
 
         if (dst->submittedFrames) {
             lv_label_set_text_fmt(controller->stats_items.drop_rate, "%.2f%%",
@@ -453,6 +437,36 @@ static void on_view_created(lv_fragment_t *self, lv_obj_t *view) {
     const app_settings_t *settings = &controller->global->settings;
     if (settings->syskey_capture) {
         SDL_SetWindowGrab(controller->global->ui.window, SDL_TRUE);
+    }
+#endif
+#if TARGET_WEBOS
+    /* AURORA_HIDE_OVERLAY=1 or /tmp/aurora_hide_overlay.enable: A/B video plane only.
+     * Restart the stream after changing — mid-session toggle is not supported. */
+    {
+        bool hide_overlay = false;
+        const char *hide = getenv("AURORA_HIDE_OVERLAY");
+        if (hide != NULL && hide[0] == '1' && hide[1] == '\0') {
+            hide_overlay = true;
+        } else {
+            FILE *fp = fopen("/tmp/aurora_hide_overlay.enable", "r");
+            if (fp != NULL) {
+                fclose(fp);
+                hide_overlay = true;
+            }
+        }
+        if (hide_overlay) {
+            if (controller->hint) {
+                lv_obj_add_flag(controller->hint, LV_OBJ_FLAG_HIDDEN);
+            }
+            if (controller->overlay) {
+                lv_obj_add_flag(controller->overlay, LV_OBJ_FLAG_HIDDEN);
+            }
+            if (controller->stats) {
+                lv_obj_add_flag(controller->stats, LV_OBJ_FLAG_HIDDEN);
+            }
+            lv_disp_set_bg_opa(NULL, LV_OPA_TRANSP);
+            hide_overlay_impl(controller);
+        }
     }
 #endif
 }

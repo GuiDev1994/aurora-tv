@@ -36,6 +36,29 @@ typedef union pref_attrs_t {
     } dropdown_string;
 } pref_attrs_t;
 
+typedef struct pref_row_t {
+    lv_obj_t obj;
+    lv_obj_t *control;
+} pref_row_t;
+
+static const lv_obj_class_t pref_row_class = {
+    .base_class = &lv_obj_class,
+    .group_def = LV_OBJ_CLASS_GROUP_DEF_TRUE,
+    .instance_size = sizeof(pref_row_t),
+};
+
+static void pref_row_dropdown_focus_sync_cb(lv_event_t *event) {
+    lv_obj_t *row = lv_event_get_user_data(event);
+    if (row == NULL || !pref_obj_is_focus_row(row)) {
+        return;
+    }
+    if (lv_event_get_code(event) == LV_EVENT_FOCUSED) {
+        lv_obj_add_state(row, LV_STATE_FOCUS_KEY);
+    } else if (lv_event_get_code(event) == LV_EVENT_DEFOCUSED) {
+        lv_obj_clear_state(row, LV_STATE_FOCUS_KEY);
+    }
+}
+
 static const lv_obj_class_t pref_label_cls = {
     .base_class = &lv_label_class,
     .group_def = LV_OBJ_CLASS_GROUP_DEF_TRUE,
@@ -66,25 +89,84 @@ lv_obj_t *pref_pane_container(lv_obj_t *parent) {
     lv_obj_set_style_bg_opa(view, LV_OPA_TRANSP, 0);
     lv_obj_set_style_radius(view, 0, 0);
     lv_obj_set_style_border_opa(view, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_pad_all(view, 0, 0);
+    lv_obj_set_style_pad_row(view, LV_DPX(4), 0);
     return view;
 }
+
+lv_obj_t *pref_focus_row(lv_obj_t *parent, const char *title) {
+    lv_obj_t *row = lv_obj_class_create_obj(&pref_row_class, parent);
+    lv_obj_class_init_obj(row);
+    lv_obj_set_width(row, LV_PCT(100));
+    lv_obj_set_height(row, LV_DPX(72));
+    lv_obj_add_flag(row, LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_layout(row, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_hor(row, LV_DPX(12), 0);
+    lv_obj_set_style_pad_gap(row, LV_DPX(16), 0);
+    lv_obj_set_style_radius(row, LV_DPX(8), 0);
+    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+
+    lv_obj_t *lab = lv_label_create(row);
+    lv_label_set_text(lab, title);
+    lv_label_set_long_mode(lab, LV_LABEL_LONG_DOT);
+    lv_obj_set_flex_grow(lab, 1);
+    lv_obj_set_style_text_font(lab, lv_theme_get_font_normal(row), 0);
+    lv_obj_set_style_text_color(lab, ml_color_hex(ML_COLOR_TEXT), 0);
+    return row;
+}
+
+bool pref_obj_is_focus_row(const lv_obj_t *obj) {
+    return obj != NULL && lv_obj_check_type(obj, &pref_row_class);
+}
+
+lv_obj_t *pref_row_get_control(const lv_obj_t *row) {
+    if (!pref_obj_is_focus_row(row)) {
+        return NULL;
+    }
+    return ((const pref_row_t *) row)->control;
+}
+
+void pref_row_bind_control(lv_obj_t *row, lv_obj_t *control) {
+    if (!pref_obj_is_focus_row(row) || control == NULL) {
+        return;
+    }
+    ((pref_row_t *) row)->control = control;
+    if (lv_obj_has_class(control, &lv_dropdown_class)) {
+        /* Dropdown stays in the D-pad group; the row is visual-only (label + focus ring). */
+        lv_obj_add_event_cb(control, pref_row_dropdown_focus_sync_cb, LV_EVENT_FOCUSED, row);
+        lv_obj_add_event_cb(control, pref_row_dropdown_focus_sync_cb, LV_EVENT_DEFOCUSED, row);
+        return;
+    }
+    lv_obj_add_flag(control, PREF_ROW_BOUND_FLAG);
+    if (lv_obj_get_group(control) != NULL) {
+        lv_group_remove_obj(control);
+    }
+    if (lv_obj_has_class(control, &lv_slider_class)) {
+        lv_obj_clear_flag(control, LV_OBJ_FLAG_CLICKABLE);
+    }
+}
+
+static void pref_checkable_pointer_cb(lv_event_t *event);
 
 lv_obj_t *pref_checkbox(lv_obj_t *parent, const char *title, bool *value, bool reverse) {
     lv_obj_t *checkbox = lv_checkbox_create(parent);
     lv_checkbox_set_text(checkbox, title);
-    lv_obj_set_size(checkbox, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(checkbox, LV_DPX(10), 0);
-    lv_obj_set_style_radius(checkbox, LV_DPX(4), 0);
+    lv_obj_set_size(checkbox, LV_PCT(100), LV_DPX(72));
+    lv_obj_set_style_pad_hor(checkbox, LV_DPX(12), 0);
+    lv_obj_set_style_pad_ver(checkbox, LV_DPX(10), 0);
+    lv_obj_set_style_radius(checkbox, LV_DPX(8), 0);
     pref_attrs_t *attrs = lv_mem_alloc(sizeof(pref_attrs_t));
     attrs->checkbox.ref = value;
     attrs->checkbox.reverse = reverse;
     lv_obj_clear_flag(checkbox, LV_OBJ_FLAG_CHECKABLE);
-    /* LVGL's keypad/encoder input handling already synthesizes a CLICKED event
-     * when a focused object receives an ENTER key release (see indev_keypad_proc
-     * in lv_indev.c), so listening on LV_EVENT_KEY here as well double-fires
-     * the toggle for a single remote OK press. CLICKED alone covers both touch
-     * and remote/keypad activation. */
-    lv_obj_add_event_cb(checkbox, pref_checkable_activate, LV_EVENT_CLICKED, attrs);
+    pref_checkbox_prepare_for_dpad(checkbox);
+    lv_obj_add_flag(checkbox, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_user_data(checkbox, attrs);
+    /* Pointer / Magic Remote click only — D-pad uses Enter in settings controller. */
+    lv_obj_add_event_cb(checkbox, pref_checkable_pointer_cb, LV_EVENT_CLICKED, attrs);
     lv_obj_add_event_cb(checkbox, pref_attrs_free, LV_EVENT_DELETE, attrs);
     if (*value ^ reverse) {
         lv_obj_add_state(checkbox, LV_STATE_CHECKED);
@@ -92,6 +174,23 @@ lv_obj_t *pref_checkbox(lv_obj_t *parent, const char *title, bool *value, bool r
         lv_obj_clear_state(checkbox, LV_STATE_CHECKED);
     }
     return checkbox;
+}
+
+void pref_checkbox_toggle(lv_obj_t *checkbox) {
+    if (checkbox == NULL || !lv_obj_has_class(checkbox, &lv_checkbox_class)) {
+        return;
+    }
+    pref_attrs_t *attrs = lv_obj_get_user_data(checkbox);
+    if (attrs == NULL) {
+        return;
+    }
+    if (lv_obj_has_state(checkbox, LV_STATE_CHECKED)) {
+        lv_obj_clear_state(checkbox, LV_STATE_CHECKED);
+    } else {
+        lv_obj_add_state(checkbox, LV_STATE_CHECKED);
+    }
+    *attrs->checkbox.ref = lv_obj_has_state(checkbox, LV_STATE_CHECKED) ^ attrs->checkbox.reverse;
+    lv_event_send(checkbox, LV_EVENT_VALUE_CHANGED, NULL);
 }
 
 void pref_checkbox_prepare_for_dpad(lv_obj_t *checkbox) {
@@ -228,7 +327,7 @@ lv_obj_t *pref_desc_label(lv_obj_t *parent, const char *title, bool focusable) {
     lv_obj_set_style_pad_left(label, LV_DPX(30), 0);
     lv_obj_set_style_text_font(label, lv_theme_get_font_small(parent), 0);
     lv_obj_set_style_outline_opa(label, LV_OPA_50, LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_outline_color(label, lv_theme_get_color_primary(label), LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_outline_color(label, ml_color_hex(ML_COLOR_FOCUS), LV_STATE_FOCUS_KEY);
     lv_obj_set_style_outline_width(label, LV_DPX(3), LV_STATE_FOCUS_KEY);
     lv_obj_set_style_outline_pad(label, LV_DPX(3), LV_STATE_FOCUS_KEY);
     lv_obj_set_style_radius(label, LV_DPX(4), 0);
@@ -265,6 +364,17 @@ static void pref_checkable_value_write_back(lv_event_t *event) {
 
 static bool pref_checkable_is_activate_event(lv_event_t *event) {
     return lv_event_get_code(event) == LV_EVENT_CLICKED;
+}
+
+static void pref_checkable_pointer_cb(lv_event_t *event) {
+    if (lv_event_get_code(event) != LV_EVENT_CLICKED) {
+        return;
+    }
+    lv_indev_t *indev = lv_indev_get_act();
+    if (indev != NULL && lv_indev_get_type(indev) != LV_INDEV_TYPE_POINTER) {
+        return;
+    }
+    pref_checkable_activate(event);
 }
 
 static void pref_checkable_activate(lv_event_t *event) {
@@ -319,8 +429,8 @@ static void pref_slider_value_write_back(lv_event_t *event) {
     int value = lv_slider_get_value(target);
     if (lv_event_get_code(event) == LV_EVENT_KEY) {
         uint32_t key = lv_event_get_key(event);
-        if (key == LV_KEY_UP || key == LV_KEY_DOWN) {
-            // TODO: make this a patch to LVGL
+        if (key == LV_KEY_LEFT || key == LV_KEY_RIGHT) {
+            /* Cancel in-flight knob animation so LEFT/RIGHT value edits feel instant. */
             _lv_bar_anim_t *var = &((lv_slider_t *) target)->bar.cur_value_anim;
             var->anim_state = -1;
             lv_anim_del(var, NULL);

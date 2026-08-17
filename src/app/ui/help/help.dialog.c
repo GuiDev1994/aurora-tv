@@ -63,8 +63,12 @@ lv_obj_t *help_dialog_create(app_t *app) {
         }
         int panel_fps = 0;
         if (SDL_webOSGetRefreshRate(&panel_fps) && panel_fps > 0) {
-            char fps_text[16];
-            snprintf(fps_text, sizeof(fps_text), "%d FPS", panel_fps);
+            char fps_text[32];
+            if (panel_fps > 120) {
+                snprintf(fps_text, sizeof(fps_text), "120 Hz (VRR max %d)", panel_fps);
+            } else {
+                snprintf(fps_text, sizeof(fps_text), "%d FPS", panel_fps);
+            }
             add_about_line(list, locstr("Refresh rate"), fps_text);
         }
 #endif

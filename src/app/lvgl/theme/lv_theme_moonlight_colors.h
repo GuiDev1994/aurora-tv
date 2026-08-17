@@ -10,6 +10,8 @@
 #define ML_COLOR_BORDER       0x2A2A2A
 #define ML_COLOR_PRIMARY      0x8B5CF6
 #define ML_COLOR_PRIMARY_DIM  0x6D28D9
+/** TV settings / launcher focus ring (blue — distinct from violet accent). */
+#define ML_COLOR_FOCUS        0x3B82F6
 #define ML_COLOR_TEXT         0xF5F5F5
 #define ML_COLOR_TEXT_MUTED   0x9CA3AF
 

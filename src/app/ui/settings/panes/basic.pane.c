@@ -4,30 +4,35 @@
 #include "pref_obj.h"
 #include "pref_fps.h"
 #include "pref_res.h"
+#include "av_pane.h"
 #include "ui/settings/settings.controller.h"
-#include "profile/profile_manager.h"
 
 #include "util/i18n.h"
-#include "logging.h"
+#include "ss4s.h"
+#include "ss4s_modules.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+/**
+ * Compact stream settings (punktfunk FocusRow style): one labelled control per row.
+ * Advanced host/input/experimental stay in their panes.
+ */
 typedef struct {
     lv_fragment_t base;
     settings_controller_t *parent;
 
-    lv_obj_t *res_warning;
     lv_obj_t *bitrate_label;
     lv_obj_t *bitrate_slider;
-    lv_obj_t *bitrate_warning;
-    lv_obj_t *profile_dropdown;
-    lv_obj_t *abr_checkbox;
-    lv_obj_t *abr_mode_dropdown;
+    lv_obj_t *hdr_checkbox;
+    lv_obj_t *hdr_hint;
 
-    pref_dropdown_string_entry_t *lang_entries;
-    int lang_entries_len;
+    pref_dropdown_string_entry_t *vdec_entries;
+    int vdec_entries_len;
+
+    pref_dropdown_int_entry_t surround_entries[3];
+    int surround_entries_len;
 } basic_pane_t;
 
 static void pane_ctor(lv_fragment_t *self, void *args);
@@ -40,35 +45,13 @@ static void on_bitrate_changed(lv_event_t *e);
 
 static void on_res_fps_updated(lv_event_t *e);
 
-static void on_fullscreen_updated(lv_event_t *e);
-
 static void update_bitrate_label(basic_pane_t *pane);
 
-static void init_locale_entries(basic_pane_t *pane);
+static void hdr_state_update(basic_pane_t *pane);
 
-static void pref_mark_restart_cb(lv_event_t *e);
+static void hdr_state_update_cb(lv_event_t *e);
 
-static void update_bitrate_hint(basic_pane_t *pane);
-
-static void on_profile_changed(lv_event_t *e);
-
-static void on_save_profile_clicked(lv_event_t *e);
-
-static void on_abr_changed(lv_event_t *e);
-
-static void on_abr_mode_changed(lv_event_t *e);
-
-static void on_ntsc_refresh_changed(lv_event_t *e);
-
-static void refresh_profile_dropdown(basic_pane_t *pane);
-
-static void on_new_profile_clicked(lv_event_t *e);
-
-static void on_rename_profile_clicked(lv_event_t *e);
-
-static void on_delete_profile_clicked(lv_event_t *e);
-
-static void basic_pane_add_profile_section(basic_pane_t *pane, lv_obj_t *view);
+static void module_changed_cb(lv_event_t *e);
 
 const lv_fragment_class_t settings_pane_basic_cls = {
     .constructor_cb = pane_ctor,
@@ -76,21 +59,50 @@ const lv_fragment_class_t settings_pane_basic_cls = {
     .create_obj_cb = create_obj,
     .instance_size = sizeof(basic_pane_t),
 };
+
 #define BITRATE_STEP 1000
+
+static void style_row_control(lv_obj_t *ctrl) {
+    lv_obj_set_width(ctrl, LV_DPX(280));
+    lv_obj_clear_flag(ctrl, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
+}
 
 static void pane_ctor(lv_fragment_t *self, void *args) {
     basic_pane_t *pane = (basic_pane_t *) self;
     pane->parent = args;
-#ifdef FEATURE_I18N_LANGUAGE_SETTINGS
-    init_locale_entries(pane);
-#endif
+    app_t *app = pane->parent->app;
+
+    array_list_t modules = app->ss4s.modules;
+    pane->vdec_entries = calloc(modules.size + 1, sizeof(pref_dropdown_string_entry_t));
+    set_decoder_entry(&pane->vdec_entries[pane->vdec_entries_len++], locstr("Auto"), "auto", true);
+    for (int module_idx = 0; module_idx < modules.size; module_idx++) {
+        const SS4S_ModuleInfo *info = array_list_get(&modules, module_idx);
+        const char *group = SS4S_ModuleInfoGetGroup(info);
+        if (info->has_video && !contains_decoder_group(pane->vdec_entries, pane->vdec_entries_len, group)) {
+            set_decoder_entry(&pane->vdec_entries[pane->vdec_entries_len++], info->name, group, false);
+        }
+    }
+
+    unsigned int supported_ch = app->ss4s.audio_cap.maxChannels;
+    if (supported_ch < 6) {
+        supported_ch = 8;
+    }
+    for (int i = 0; i < (int) audio_config_len; i++) {
+        audio_config_entry_t config = audio_configs[i];
+        if (supported_ch < CHANNEL_COUNT_FROM_AUDIO_CONFIGURATION(config.configuration)) {
+            continue;
+        }
+        pref_dropdown_int_entry_t *entry = &pane->surround_entries[pane->surround_entries_len];
+        entry->name = locstr(config.name);
+        entry->value = config.configuration;
+        entry->fallback = config.configuration == AUDIO_CONFIGURATION_STEREO;
+        pane->surround_entries_len++;
+    }
 }
 
 static void pane_dtor(lv_fragment_t *self) {
     basic_pane_t *pane = (basic_pane_t *) self;
-#ifdef FEATURE_I18N_LANGUAGE_SETTINGS
-    lv_mem_free(pane->lang_entries);
-#endif
+    free(pane->vdec_entries);
 }
 
 static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
@@ -99,41 +111,27 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     app_t *app = parent->app;
     lv_obj_t *view = pref_pane_container(container);
     lv_obj_set_layout(view, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(view, LV_FLEX_FLOW_ROW_WRAP);
-
-    pane->abr_checkbox = pref_checkbox(view, locstr("Adaptive bitrate"), &app_configuration->auto_adjust_bitrate, false);
-    lv_obj_add_event_cb(pane->abr_checkbox, on_abr_changed, LV_EVENT_VALUE_CHANGED, self);
-
-    pref_title_label(view, locstr("ABR mode"));
-    pane->abr_mode_dropdown = lv_dropdown_create(view);
-    lv_dropdown_set_options(pane->abr_mode_dropdown, "Balanced\nQuality\nLow latency");
-    lv_dropdown_set_selected(pane->abr_mode_dropdown, app_configuration->abr_mode);
-    lv_obj_set_width(pane->abr_mode_dropdown, LV_PCT(100));
-    lv_obj_add_event_cb(pane->abr_mode_dropdown, on_abr_mode_changed, LV_EVENT_VALUE_CHANGED, self);
-
-    pref_title_label(view, locstr("Resolution and FPS"));
-
+    lv_obj_set_flex_flow(view, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(view, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
     int max_width = (int) app->ss4s.video_cap.maxWidth, max_height = (int) app->ss4s.video_cap.maxHeight;
     int native_width = app->ui.width, native_height = app->ui.height;
-
 #if TARGET_WEBOS
     if (parent->panel_width > 0 && parent->panel_height > 0) {
         native_width = parent->panel_width;
         native_height = parent->panel_height;
     }
-
-    commons_log_info("Settings", "Panel native resolution: %d x %d, maximum video resolution: %d x %d",
-                     native_width, native_height, max_width, max_height);
 #endif
     if (max_width == 0 || max_height == 0) {
         max_width = native_width;
         max_height = native_height;
     }
 
-    lv_obj_t *res_dropdown = pref_dropdown_res(view, native_width, native_height, max_width, max_height,
+    lv_obj_t *res_row = pref_focus_row(view, locstr("Resolution"));
+    lv_obj_t *res_dropdown = pref_dropdown_res(res_row, native_width, native_height, max_width, max_height,
                                                &app_configuration->stream.width, &app_configuration->stream.height);
-    lv_obj_set_width(res_dropdown, LV_PCT(60));
+    style_row_control(res_dropdown);
+    pref_row_bind_control(res_row, res_dropdown);
     lv_obj_add_event_cb(res_dropdown, on_res_fps_updated, LV_EVENT_VALUE_CHANGED, self);
 
     unsigned int max_fps = app->ss4s.video_cap.maxFps;
@@ -143,297 +141,103 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     }
 #endif
     const static int fps_options[] = {30, 60, 90, 120, 144, 240, 0};
-    lv_obj_t *fps_dropdown = pref_dropdown_fps(view, fps_options, (int) max_fps, &app_configuration->stream.fps,
+    lv_obj_t *fps_row = pref_focus_row(view, locstr("Frame rate"));
+    lv_obj_t *fps_dropdown = pref_dropdown_fps(fps_row, fps_options, (int) max_fps, &app_configuration->stream.fps,
                                                &app_configuration->client_refresh_rate_x100);
-    lv_obj_set_flex_grow(fps_dropdown, 1);
+    style_row_control(fps_dropdown);
+    pref_row_bind_control(fps_row, fps_dropdown);
     lv_obj_add_event_cb(fps_dropdown, on_res_fps_updated, LV_EVENT_VALUE_CHANGED, self);
 
-    lv_obj_t *ntsc_checkbox = pref_checkbox(view, locstr("Use NTSC refresh (59.94 / 119.88 Hz)"),
-                                            &app_configuration->use_ntsc_refresh, false);
-    lv_obj_add_event_cb(ntsc_checkbox, on_ntsc_refresh_changed, LV_EVENT_VALUE_CHANGED, self);
-    pref_desc_label(view,
-                    locstr("When enabled, 60/120 FPS presets use fractional NTSC pacing (59.94/119.88). "
-                           "When disabled, presets use integer 60/120 like Moonlight mobile. "
-                           "At 4K the host virtual-display mode stays integer (120) to avoid a black "
-                           "screen on some webOS TVs; NTSC is still sent as clientRefreshRateX100 for "
-                           "encode pacing. Custom FPS still allows any fractional rate."),
-                    false);
-
-    pref_desc_label(view,
-                    locstr("Tip: choose Custom FPS to enter a fractional refresh rate (e.g. 119.94 for VRR game "
-                           "mode). The exact value is sent to the host for frame pacing."),
-                    false);
-
-    pane->res_warning = lv_label_create(view);
-    lv_obj_add_flag(pane->res_warning, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_width(pane->res_warning, LV_PCT(100));
-    lv_obj_set_style_text_font(pane->res_warning, lv_theme_get_font_small(view), 0);
-    lv_obj_set_style_text_color(pane->res_warning, lv_palette_main(LV_PALETTE_AMBER), 0);
-    lv_label_set_long_mode(pane->res_warning, LV_LABEL_LONG_WRAP);
-
-    pane->bitrate_label = pref_title_label(view, locstr("Video bitrate"));
-
-    /* User-facing slider cap. Default max 300 Mbps for stable streaming on webOS. */
+    lv_obj_t *br_row = pref_focus_row(view, locstr("Bitrate"));
+    pane->bitrate_label = lv_label_create(br_row);
+    lv_obj_set_width(pane->bitrate_label, LV_DPX(90));
+    lv_obj_set_style_text_align(pane->bitrate_label, LV_TEXT_ALIGN_RIGHT, 0);
     unsigned int max = 300000;
-    lv_obj_t *bitrate_slider = pref_slider(view, &app_configuration->stream.bitrate, 5000, (int) max, BITRATE_STEP);
-    lv_obj_set_width(bitrate_slider, LV_PCT(100));
+    lv_obj_t *bitrate_slider = pref_slider(br_row, &app_configuration->stream.bitrate, 5000, (int) max, BITRATE_STEP);
+    lv_obj_set_width(bitrate_slider, LV_DPX(180));
     lv_obj_add_event_cb(bitrate_slider, on_bitrate_changed, LV_EVENT_VALUE_CHANGED, self);
     pane->bitrate_slider = bitrate_slider;
-
-    pane->bitrate_warning = lv_label_create(view);
-    lv_obj_add_flag(pane->bitrate_warning, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_width(pane->bitrate_warning, LV_PCT(100));
-    lv_obj_set_style_text_font(pane->bitrate_warning, lv_theme_get_font_small(view), 0);
-    lv_obj_set_style_text_color(pane->bitrate_warning, lv_palette_main(LV_PALETTE_AMBER), 0);
-    lv_label_set_long_mode(pane->bitrate_warning, LV_LABEL_LONG_WRAP);
-
-#if !FEATURE_FORCE_FULLSCREEN
-    lv_obj_t *checkbox = pref_checkbox(view, locstr("Fullscreen UI"), &app_configuration->fullscreen, false);
-    if (app->ss4s.video_cap.transform & SS4S_VIDEO_CAP_TRANSFORM_AREA_DEST) {
-        lv_obj_add_event_cb(checkbox, on_fullscreen_updated, LV_EVENT_VALUE_CHANGED, pane);
-    } else {
-        lv_obj_add_state(checkbox, LV_STATE_DISABLED);
-        pref_desc_label(view, locstr("Can't use windowed UI for this decoder"), false);
-    }
-#endif
-
-    lv_obj_t *show_stats_checkbox = pref_checkbox(view, locstr("Show performance stats on stream start"),
-                                                   &app_configuration->show_stats_on_start, false);
-    pref_desc_label(view, locstr("Start streaming with performance overlay visible and pinned."), false);
-
-    lv_obj_t *show_stats_compact_checkbox = pref_checkbox(view, locstr("Compact performance stats (single line)"),
-                                                          &app_configuration->show_stats_compact, false);
-    pref_desc_label(view, locstr("Show minimalist one-line stats like Moonlight Android (FPS, RTT, bitrate)."), false);
-
-#ifdef FEATURE_I18N_LANGUAGE_SETTINGS
-    lv_obj_t *lang_label = pref_title_label(view, locstr("Language"));
-
-    lv_obj_t *language_dropdown = pref_dropdown_string(view, pane->lang_entries, pane->lang_entries_len,
-                                                       &app_configuration->language);
-    lv_obj_add_event_cb(language_dropdown, pref_mark_restart_cb, LV_EVENT_VALUE_CHANGED, pane);
-    lv_obj_set_width(language_dropdown, LV_PCT(100));
-#endif
-
+    pref_row_bind_control(br_row, bitrate_slider);
     update_bitrate_label(pane);
-    update_bitrate_hint(pane);
 
-    basic_pane_add_profile_section(pane, view);
+    lv_obj_t *vdec_row = pref_focus_row(view, locstr("Video backend"));
+    lv_obj_t *vdec_dropdown = pref_dropdown_string(vdec_row, pane->vdec_entries, pane->vdec_entries_len,
+                                                   &app_configuration->decoder);
+    style_row_control(vdec_dropdown);
+    pref_row_bind_control(vdec_row, vdec_dropdown);
+    lv_obj_add_event_cb(vdec_dropdown, module_changed_cb, LV_EVENT_VALUE_CHANGED, pane);
+
+    lv_obj_t *hevc_checkbox = pref_checkbox(view, locstr("HEVC"), &app_configuration->hevc, false);
+    lv_obj_set_height(hevc_checkbox, LV_DPX(72));
+    lv_obj_add_event_cb(hevc_checkbox, hdr_state_update_cb, LV_EVENT_VALUE_CHANGED, pane);
+
+    lv_obj_t *av1_checkbox = pref_checkbox(view, locstr("AV1"), &app_configuration->av1, false);
+    lv_obj_set_height(av1_checkbox, LV_DPX(72));
+    if (app->ss4s.video_cap.codecs & SS4S_VIDEO_AV1) {
+        lv_obj_clear_state(av1_checkbox, LV_STATE_DISABLED);
+    } else {
+        lv_obj_add_state(av1_checkbox, LV_STATE_DISABLED);
+    }
+    lv_obj_add_event_cb(av1_checkbox, hdr_state_update_cb, LV_EVENT_VALUE_CHANGED, pane);
+
+    pane->hdr_checkbox = pref_checkbox(view, locstr("HDR"), &app_configuration->hdr, false);
+    lv_obj_set_height(pane->hdr_checkbox, LV_DPX(72));
+    pane->hdr_hint = pref_desc_label(view, NULL, false);
+    lv_obj_add_event_cb(pane->hdr_checkbox, hdr_state_update_cb, LV_EVENT_VALUE_CHANGED, pane);
+    hdr_state_update(pane);
+
+    lv_obj_t *audio_row = pref_focus_row(view, locstr("Audio"));
+    lv_obj_t *ch_dropdown = pref_dropdown_int(audio_row, pane->surround_entries, pane->surround_entries_len,
+                                              &app_configuration->stream.audioConfiguration, NULL);
+    style_row_control(ch_dropdown);
+    pref_row_bind_control(audio_row, ch_dropdown);
+    lv_obj_add_event_cb(ch_dropdown, module_changed_cb, LV_EVENT_VALUE_CHANGED, pane);
 
     return view;
 }
 
 static void on_bitrate_changed(lv_event_t *e) {
-    basic_pane_t *pane = lv_event_get_user_data(e);
-    pane->parent->needs_stream_reconnect = true;
-    update_bitrate_label(pane);
-    update_bitrate_hint(pane);
+    update_bitrate_label(lv_event_get_user_data(e));
 }
 
 static void on_res_fps_updated(lv_event_t *e) {
     basic_pane_t *pane = lv_event_get_user_data(e);
-    pane->parent->needs_stream_reconnect = true;
-    /* Do NOT auto-bump bitrate to match the new resolution/FPS. The user is the sole owner
-     * of the bitrate slider; previously this handler called settings_optimal_bitrate() and
-     * forced the slider up to that value (e.g. 300 Mbps), silently overwriting whatever the
-     * user had chosen. That behavior was confusing and effectively prevented running high
-     * resolutions at moderate bitrates. */
-    if (app_configuration->stream.width > 1920 && app_configuration->stream.height > 1080 &&
-        app_configuration->stream.fps > 60) {
-        lv_obj_clear_flag(pane->res_warning, LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text_static(pane->res_warning, locstr("Your computer may not perform well when using this "
-                                                           "resolution and framerate."));
-    } else {
-        lv_obj_add_flag(pane->res_warning, LV_OBJ_FLAG_HIDDEN);
-    }
-    update_bitrate_label(pane);
-    update_bitrate_hint(pane);
-}
-
-static void on_ntsc_refresh_changed(lv_event_t *e) {
-    basic_pane_t *pane = lv_event_get_user_data(e);
-    pane->parent->needs_stream_reconnect = true;
-    settings_apply_ntsc_preset_refresh(app_configuration, app_configuration->stream.fps);
-}
-
-static void on_fullscreen_updated(lv_event_t *e) {
-    basic_pane_t *pane = lv_event_get_user_data(e);
-    app_set_fullscreen(pane->parent->app, app_configuration->fullscreen);
+    (void) pane;
 }
 
 static void update_bitrate_label(basic_pane_t *pane) {
-    lv_label_set_text_fmt(pane->bitrate_label, locstr("Video bitrate - %d kbps"), app_configuration->stream.bitrate);
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%d Mbps", app_configuration->stream.bitrate / 1000);
+    lv_label_set_text(pane->bitrate_label, buf);
 }
 
-static void update_bitrate_hint(basic_pane_t *pane) {
+static void hdr_state_update(basic_pane_t *pane) {
     app_t *app = pane->parent->app;
-    const int bitrate = app_configuration->stream.bitrate;
-    if (bitrate > 250000) {
-        lv_obj_clear_flag(pane->bitrate_warning, LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text_static(pane->bitrate_warning,
-                                 locstr("Above 250 Mbps usually brings no quality gain and can cause "
-                                        "packet loss as the connection becomes less stable."));
-    } else if (app->ss4s.video_cap.suggestedBitrate > 0 &&
-               bitrate > app->ss4s.video_cap.suggestedBitrate) {
-        lv_obj_clear_flag(pane->bitrate_warning, LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text_static(pane->bitrate_warning, locstr("Higher bitrate may cause performance issue, "
-                                                               "try with caution."));
+    const bool hevc_hdr = app_configuration->hevc && (app->ss4s.video_cap.codecs & SS4S_VIDEO_H265);
+    const bool av1_hdr = app_configuration->av1 && (app->ss4s.video_cap.codecs & SS4S_VIDEO_AV1);
+    bool hdr_ok = (hevc_hdr || av1_hdr) && app->ss4s.video_cap.hdr;
+    if (hdr_ok) {
+        lv_obj_clear_state(pane->hdr_checkbox, LV_STATE_DISABLED);
+        lv_label_set_text(pane->hdr_hint, "");
+        lv_obj_add_flag(pane->hdr_hint, LV_OBJ_FLAG_HIDDEN);
     } else {
-        lv_obj_add_flag(pane->bitrate_warning, LV_OBJ_FLAG_HIDDEN);
-    }
-}
-
-static void init_locale_entries(basic_pane_t *pane) {
-    pane->lang_entries = lv_mem_alloc(sizeof(pref_dropdown_string_entry_t) * (I18N_LOCALES_LEN + 2));
-    lv_memset_00(pane->lang_entries, sizeof(pref_dropdown_string_entry_t) * (I18N_LOCALES_LEN + 2));
-    for (int i = 0; i < 2; i++) {
-        pref_dropdown_string_entry_t *def_entry = &pane->lang_entries[i];
-        const i18n_entry_t *entry = i18n_entry_at(i);
-        def_entry->value = entry->locale;
-        def_entry->name = locstr(entry->name);
-        def_entry->fallback = i == 0;
-        pane->lang_entries_len++;
-    }
-    char *input = strdup(I18N_LOCALES), *tok = NULL, *saveptr = input;
-    while ((tok = strtok_r(saveptr, ";", &saveptr)) != NULL) {
-        const i18n_entry_t *entry = i18n_entry(tok);
-        if (entry) {
-            pref_dropdown_string_entry_t *pref_entry = &pane->lang_entries[pane->lang_entries_len];
-            pref_entry->value = entry->locale;
-            pref_entry->name = entry->name;
-            pane->lang_entries_len++;
+        lv_obj_add_state(pane->hdr_checkbox, LV_STATE_DISABLED);
+        lv_obj_clear_flag(pane->hdr_hint, LV_OBJ_FLAG_HIDDEN);
+        if (!app_configuration->hevc && !app_configuration->av1) {
+            lv_label_set_text(pane->hdr_hint, locstr("HDR requires HEVC or AV1."));
+        } else {
+            lv_label_set_text(pane->hdr_hint, locstr("HDR is not supported by the current decoder."));
         }
     }
-    free(input);
 }
 
-static void pref_mark_restart_cb(lv_event_t *e) {
-    basic_pane_t *pane = (basic_pane_t *) lv_event_get_user_data(e);
+static void hdr_state_update_cb(lv_event_t *e) {
+    hdr_state_update(lv_event_get_user_data(e));
+}
+
+static void module_changed_cb(lv_event_t *e) {
+    basic_pane_t *pane = lv_event_get_user_data(e);
     settings_controller_t *parent = pane->parent;
-    parent->needs_locale_reapply |= strcasecmp(i18n_locale(), app_configuration->language) != 0;
-}
-
-static void refresh_profile_dropdown(basic_pane_t *pane) {
-    char options[512] = {0};
-    int active_index = 0;
-    const char *active_id = profile_manager_active_id();
-    for (int i = 0; i < profile_manager_count(); i++) {
-        const streaming_profile_t *profile = profile_manager_get(i);
-        if (!profile) {
-            continue;
-        }
-        if (i > 0) {
-            strcat(options, "\n");
-        }
-        strcat(options, profile->name);
-        if (active_id && strcmp(profile->id, active_id) == 0) {
-            active_index = i;
-        }
-    }
-    lv_dropdown_set_options(pane->profile_dropdown, options[0] ? options : "Default");
-    lv_dropdown_set_selected(pane->profile_dropdown, active_index);
-}
-
-static void basic_pane_add_profile_section(basic_pane_t *pane, lv_obj_t *view) {
-    pref_header(view, locstr("Streaming profile"));
-
-    pane->profile_dropdown = lv_dropdown_create(view);
-    lv_obj_set_width(pane->profile_dropdown, LV_PCT(100));
-    refresh_profile_dropdown(pane);
-    lv_obj_add_event_cb(pane->profile_dropdown, on_profile_changed, LV_EVENT_VALUE_CHANGED, pane);
-
-    lv_obj_t *profile_actions = lv_obj_create(view);
-    lv_obj_remove_style_all(profile_actions);
-    lv_obj_set_width(profile_actions, LV_PCT(100));
-    lv_obj_set_flex_flow(profile_actions, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_column(profile_actions, lv_dpx(8), 0);
-
-    lv_obj_t *save_profile_btn = lv_btn_create(profile_actions);
-    lv_obj_t *save_profile_label = lv_label_create(save_profile_btn);
-    lv_label_set_text(save_profile_label, locstr("Save to profile"));
-    lv_obj_add_event_cb(save_profile_btn, on_save_profile_clicked, LV_EVENT_CLICKED, pane);
-
-    lv_obj_t *new_profile_btn = lv_btn_create(profile_actions);
-    lv_obj_t *new_profile_label = lv_label_create(new_profile_btn);
-    lv_label_set_text(new_profile_label, locstr("New"));
-    lv_obj_add_event_cb(new_profile_btn, on_new_profile_clicked, LV_EVENT_CLICKED, pane);
-
-    lv_obj_t *rename_profile_btn = lv_btn_create(profile_actions);
-    lv_obj_t *rename_profile_label = lv_label_create(rename_profile_btn);
-    lv_label_set_text(rename_profile_label, locstr("Rename"));
-    lv_obj_add_event_cb(rename_profile_btn, on_rename_profile_clicked, LV_EVENT_CLICKED, pane);
-
-    lv_obj_t *delete_profile_btn = lv_btn_create(profile_actions);
-    lv_obj_t *delete_profile_label = lv_label_create(delete_profile_btn);
-    lv_label_set_text(delete_profile_label, locstr("Delete"));
-    lv_obj_add_event_cb(delete_profile_btn, on_delete_profile_clicked, LV_EVENT_CLICKED, pane);
-}
-
-static void on_profile_changed(lv_event_t *e) {
-    basic_pane_t *pane = lv_event_get_user_data(e);
-    uint16_t index = lv_dropdown_get_selected(pane->profile_dropdown);
-    const streaming_profile_t *profile = profile_manager_get(index);
-    if (!profile) {
-        return;
-    }
-    profile_manager_set_active(profile->id);
-    profile_manager_apply_to_settings(app_configuration);
-    lv_event_send(pane->bitrate_slider, LV_EVENT_VALUE_CHANGED, NULL);
-}
-
-static void on_save_profile_clicked(lv_event_t *e) {
-  basic_pane_t *pane = lv_event_get_user_data(e);
-  const streaming_profile_t *active = profile_manager_get_active();
-  if (active) {
-    profile_manager_save_from_settings(app_configuration, active->id);
-  }
-  (void) pane;
-}
-
-static void on_abr_changed(lv_event_t *e) {
-    (void) e;
-}
-
-static void on_abr_mode_changed(lv_event_t *e) {
-    basic_pane_t *pane = lv_event_get_user_data(e);
-    app_configuration->abr_mode = (int) lv_dropdown_get_selected(pane->abr_mode_dropdown);
-    if (app_configuration->abr_mode < 0 || app_configuration->abr_mode > 2) {
-        app_configuration->abr_mode = 0;
-    }
-}
-
-static void on_new_profile_clicked(lv_event_t *e) {
-    basic_pane_t *pane = lv_event_get_user_data(e);
-    char name_buf[64];
-    snprintf(name_buf, sizeof(name_buf), "Profile %d", profile_manager_count() + 1);
-    char new_id[37];
-    if (profile_manager_create(name_buf, app_configuration, new_id, sizeof(new_id))) {
-        profile_manager_set_active(new_id);
-        refresh_profile_dropdown(pane);
-    }
-}
-
-static void on_rename_profile_clicked(lv_event_t *e) {
-    basic_pane_t *pane = lv_event_get_user_data(e);
-    const streaming_profile_t *active = profile_manager_get_active();
-    if (!active) {
-        return;
-    }
-    char new_name[64];
-    snprintf(new_name, sizeof(new_name), "%s (2)", active->name);
-    if (profile_manager_rename(active->id, new_name)) {
-        refresh_profile_dropdown(pane);
-    }
-}
-
-static void on_delete_profile_clicked(lv_event_t *e) {
-    basic_pane_t *pane = lv_event_get_user_data(e);
-    const streaming_profile_t *active = profile_manager_get_active();
-    if (!active || profile_manager_count() <= 1) {
-        return;
-    }
-    if (profile_manager_delete(active->id)) {
-        profile_manager_apply_to_settings(app_configuration);
-        refresh_profile_dropdown(pane);
-        lv_event_send(pane->bitrate_slider, LV_EVENT_VALUE_CHANGED, NULL);
-    }
+    parent->needs_stream_reconnect = true;
+    hdr_state_update(pane);
 }

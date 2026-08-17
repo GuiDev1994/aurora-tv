@@ -27,7 +27,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define APPS_GRID_COLS 5
+#define APPS_GRID_COLS 8
 #define APPS_GRID_ROWS 3
 
 typedef void (*action_cb_t)(apps_fragment_t *controller, lv_obj_t *buttons, uint16_t index);

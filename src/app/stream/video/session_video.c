@@ -63,10 +63,6 @@ static bool need_idr_on_resume = false;
 static struct VIDEO_STATS vdec_temp_stats;
 static int vdec_stream_format = 0;
 static bool vdec_warned_near_buffer_limit;
-#if TARGET_WEBOS
-static unsigned vdec_panel_phase_low_fps_ms;
-static unsigned long vdec_panel_phase_loosen_until_ms;
-#endif
 VIDEO_STATS vdec_summary_stats;
 /* Seqlock for vdec_summary_stats: odd while vdec_stat_submit is mid-write. */
 static unsigned vdec_stats_seq;
@@ -154,11 +150,6 @@ int vdec_delegate_setup(int videoFormat, int width, int height, int redrawRate, 
     frames_since_idr = 0;
     vdec_stream_target_fps = redrawRate > 0 ? redrawRate : 60;
     vdec_warned_near_buffer_limit = false;
-#if TARGET_WEBOS
-    vdec_panel_phase_low_fps_ms = 0;
-    vdec_panel_phase_loosen_until_ms = 0;
-    SS4S_PlayerSetPanelPhaseLoosen(player, false);
-#endif
 
     if (videoFormat & VIDEO_FORMAT_MASK_AV1) {
         vdec_stream_info.width = width;
@@ -236,12 +227,15 @@ static int vdec_finish_feed(SS4S_VideoFeedResult result, PDECODE_UNIT decodeUnit
         } else {
             frames_since_idr++;
         }
+        /* Optional periodic HEVC IDR (Settings → Video). Off by default (0).
+         * When enabled (e.g. 10000 ms) it can cause a hitch every interval. */
         const int idr_ms = app_configuration ? app_configuration->idr_refresh_interval_ms : 0;
         const bool hevc_stream = vdec_stream_format == VIDEO_FORMAT_H265 ||
                                  vdec_stream_format == VIDEO_FORMAT_H265_MAIN10;
         if (hevc_stream && idr_ms >= 500 && vdec_stream_target_fps > 0) {
             const int frames_threshold = (vdec_stream_target_fps * idr_ms + 500) / 1000;
             if (frames_threshold > 0 && frames_since_idr >= frames_threshold) {
+                commons_log_info("Session", "IDR reason: periodic refresh (%d ms)", idr_ms);
                 LiRequestIdrFrame();
                 frames_since_idr = 0;
             }
@@ -253,10 +247,12 @@ static int vdec_finish_feed(SS4S_VideoFeedResult result, PDECODE_UNIT decodeUnit
         vdec_temp_stats.submittedFrames++;
         if (need_idr_on_resume) {
             need_idr_on_resume = false;
+            commons_log_info("Session", "IDR reason: resume after decoder NOT_READY/BufferFull");
             return DR_NEED_IDR;
         }
         return DR_OK;
     } else if (result == SS4S_VIDEO_FEED_REQUEST_KEYFRAME) {
+        commons_log_info("Session", "IDR reason: decoder REQUEST_KEYFRAME");
         return DR_NEED_IDR;
     } else if (result == SS4S_VIDEO_FEED_NOT_READY) {
         need_idr_on_resume = true;
@@ -376,28 +372,6 @@ void vdec_stat_submit(const struct VIDEO_STATS *src, unsigned long now) {
     dst->receivedFps = (float) dst->receivedFrames / ((float) delta / 1000);
     dst->decodedFps = (float) dst->submittedFrames / ((float) delta / 1000);
     dst->currentBitrateKbps = (uint32_t) ((dst->receivedBytes * 8) / (delta / 1000.0f));
-#if TARGET_WEBOS
-    if (player != NULL && app_configuration != NULL && app_configuration->stream_pacing == 1) {
-        float target = (float) vdec_stream_target_fps;
-        if (session != NULL && session->config.stream.clientRefreshRateX100 > 0) {
-            target = session->config.stream.clientRefreshRateX100 / 100.0f;
-        }
-        const float threshold = target * 0.97f;
-        const bool low = dst->receivedFps < threshold || dst->decodedFps < threshold;
-        if (low) {
-            vdec_panel_phase_low_fps_ms += (unsigned) delta;
-        } else {
-            vdec_panel_phase_low_fps_ms = 0;
-        }
-        if (vdec_panel_phase_low_fps_ms >= 1000u) {
-            vdec_panel_phase_loosen_until_ms = now + 2500u;
-            vdec_panel_phase_low_fps_ms = 0;
-            commons_log_info("Session", "phase-pace: loosen (rx=%.1f de=%.1f target=%.1f)",
-                             dst->receivedFps, dst->decodedFps, target);
-        }
-        SS4S_PlayerSetPanelPhaseLoosen(player, now < vdec_panel_phase_loosen_until_ms);
-    }
-#endif
     const bool show_stats = streaming_stats_shown();
     if (show_stats) {
         LiGetEstimatedRttInfo(&dst->rtt, &dst->rttVariance);

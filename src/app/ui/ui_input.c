@@ -61,6 +61,10 @@ void app_input_set_group(app_ui_input_t *input, lv_group_t *group) {
 }
 
 lv_group_t *app_input_get_group(app_ui_input_t *input) {
+    lv_group_t *const *tail = _lv_ll_get_tail(&input->modal_groups);
+    if (tail) {
+        return *tail;
+    }
     return input->app_group;
 }
 

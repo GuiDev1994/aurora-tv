@@ -3,6 +3,7 @@
 
 #include "util/i18n.h"
 #include "util/font.h"
+#include "util/log_overlay.h"
 #include "hints.h"
 
 #include "lvgl/ext/lv_child_group.h"
@@ -189,8 +190,8 @@ lv_obj_t *streaming_scene_create(lv_fragment_t *self, lv_obj_t *parent) {
         controller->stats_items.decoder = stat_label(stats, "Video");
         controller->stats_items.audio = stat_label(stats, "Audio");
         controller->stats_items.rtt = stat_label(stats, "Network RTT");
-        controller->stats_items.net_fps = stat_label(stats, "Network framerate");
-        controller->stats_items.render_fps = stat_label(stats, "Render framerate");
+        controller->stats_items.net_fps = NULL;
+        controller->stats_items.render_fps = stat_label(stats, "Decoded framerate");
         controller->stats_items.drop_rate = stat_label(stats, "Network frame drop");
         controller->stats_items.bitrate = stat_label(stats, "Bitrate");
         controller->stats_items.host_latency = stat_label(stats, "Host processing latency");
@@ -210,6 +211,9 @@ lv_obj_t *streaming_scene_create(lv_fragment_t *self, lv_obj_t *parent) {
     controller->stats = stats;
 
     streaming_overlay_resized(controller);
+
+    /* Settings → Show logs ON: force Live when the stream UI mounts. */
+    log_overlay_reassert();
 
     // We return overlay instead of obj, and will delete the obj manually
     return overlay;
