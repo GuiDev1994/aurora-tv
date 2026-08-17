@@ -23,8 +23,8 @@ static bool wheel_handle_gridview(app_ui_input_t *input, const SDL_MouseWheelEve
     if (focused == NULL || !lv_obj_check_type(focused, &lv_gridview_class)) {
         return false;
     }
-    /* Wheel down (y > 0) advances one page; wheel up goes back one page. */
-    lv_gridview_page(focused, wheel->y > 0);
+    /* Wheel up (y > 0 on webOS Magic Remote) pages toward earlier items. */
+    lv_gridview_page(focused, wheel->y < 0);
     return true;
 }
 

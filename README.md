@@ -11,6 +11,10 @@ Unofficial fork of [Moonlight TV](https://github.com/mariotaku/moonlight-tv) for
 - **HDR10 (PQ)** over HEVC Main10 (when supported).
 - Bitrate slider up to **300 Mbps**; above **250 Mbps** there is usually no visible gain and packet loss becomes more likely as the link becomes less stable.
 - **Performance stats overlay**, **full on-screen keyboard**, and **virtual mouse** during streaming.
+- **Redesigned settings** — row-based D-pad navigation, fixed combobox/checkbox remote handling, modal Host/Input/Experimental panes.
+- **On-screen log overlay** (Experimental) — punktfunk-style live log tail; Magic Remote **Yellow** cycles Live → Frozen → Off.
+- **Rooted game mode** (Experimental, rooted TVs) — TV picture/sound and motion/energy pack tuned for streaming; restored on exit.
+- **Select server** popup uses home-screen style app tiles instead of a plain list.
 
 ## Screenshots
 

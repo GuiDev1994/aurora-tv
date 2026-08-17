@@ -37,6 +37,10 @@ void settings_reconcile_refresh_rate(app_settings_t *config) {
         return;
     }
 #if defined(TARGET_WEBOS)
+    /* Native webOS plane is 120Hz. 144 is HDMI VRR only — do not stream it. */
+    if (config->stream.fps > 120) {
+        config->stream.fps = 120;
+    }
     int ntsc = settings_ntsc_refresh_rate_x100_for_fps(config->stream.fps);
     if (ntsc > 0) {
         if (config->use_ntsc_refresh) {
@@ -163,14 +167,17 @@ void settings_initialize(app_settings_t *config, char *conf_dir) {
     config->idr_refresh_interval_ms = 0;
     config->show_stats_on_start = false;
     config->show_stats_compact = false;
+    config->show_logs = false;
     config->stick_deadzone = 7;
     config->client_refresh_rate_x100 = 0;
     config->use_ntsc_refresh = false;
-    config->smooth_presentation = false;
     config->auto_adjust_bitrate = false;
     config->abr_mode = 0;
+    config->game_mode = true;
 
 #if defined(TARGET_WEBOS)
+    /* Auto pairs audio with the video module (SMP/NDL). Both remaps 5.1 PCM for LFE. */
+    set_string(&config->audio_backend, "auto");
     settings_apply_ntsc_preset_refresh(config, config->stream.fps);
 #endif
 
@@ -185,6 +192,13 @@ bool settings_read(app_settings_t *config) {
     if (ret == 0) {
         settings_reconcile_refresh_rate(config);
     }
+#if defined(TARGET_WEBOS)
+    /* Older builds forced Pulse (silent LFE). Pair audio with video again. */
+    if (config->audio_backend == NULL || config->audio_backend[0] == '\0' ||
+        strcmp(config->audio_backend, "pulse") == 0) {
+        set_string(&config->audio_backend, "auto");
+    }
+#endif
     return ret == 0;
 }
 
@@ -237,9 +251,10 @@ bool settings_save(app_settings_t *config) {
     ini_write_int(fp, "idr_refresh_interval_ms", config->idr_refresh_interval_ms);
     ini_write_bool(fp, "show_stats_on_start", config->show_stats_on_start);
     ini_write_bool(fp, "show_stats_compact", config->show_stats_compact);
+    ini_write_bool(fp, "show_logs", config->show_logs);
     ini_write_int(fp, "client_refresh_rate_x100", config->client_refresh_rate_x100);
     ini_write_bool(fp, "use_ntsc_refresh", config->use_ntsc_refresh);
-    ini_write_bool(fp, "smooth_presentation", config->smooth_presentation);
+    ini_write_bool(fp, "game_mode", config->game_mode);
 
     ini_write_section(fp, "audio");
     ini_write_string(fp, "backend", config->audio_backend);
@@ -374,6 +389,8 @@ static int settings_parse(app_settings_t *config, const char *section, const cha
         config->show_stats_on_start = INI_IS_TRUE(value);
     } else if (INI_NAME_MATCH("show_stats_compact")) {
         config->show_stats_compact = INI_IS_TRUE(value);
+    } else if (INI_NAME_MATCH("show_logs")) {
+        config->show_logs = INI_IS_TRUE(value);
     } else if (INI_NAME_MATCH("hdr")) {
         config->hdr = INI_IS_TRUE(value);
     } else if (INI_FULL_MATCH("video", "client_refresh_rate_x100")) {
@@ -385,11 +402,16 @@ static int settings_parse(app_settings_t *config, const char *section, const cha
         }
     } else if (INI_FULL_MATCH("video", "use_ntsc_refresh")) {
         config->use_ntsc_refresh = INI_IS_TRUE(value);
-    } else if (INI_FULL_MATCH("video", "smooth_presentation")) {
-        config->smooth_presentation = INI_IS_TRUE(value);
-    } else if (INI_FULL_MATCH("video", "smooth_frame_pacing") ||
+    } else if (INI_NAME_MATCH("game_mode")) {
+        config->game_mode = INI_IS_TRUE(value);
+    } else if (INI_FULL_MATCH("video", "stream_pacing") ||
                INI_FULL_MATCH("video", "pause_at_decode_time") ||
-               INI_FULL_MATCH("video", "soft_recovery")) {
+               INI_FULL_MATCH("video", "smooth_presentation") ||
+               INI_FULL_MATCH("video", "smooth_frame_pacing") ||
+               INI_FULL_MATCH("video", "soft_recovery") ||
+               INI_FULL_MATCH("video", "experimental_frame_pacer") ||
+               INI_NAME_MATCH("stream_hud") ||
+               INI_NAME_MATCH("high_priority_stream")) {
         /* Legacy keys ignored (removed from settings). */
     } else if (INI_FULL_MATCH("video", "force_full_color_range")) {
         config->force_full_color_range = INI_IS_TRUE(value);

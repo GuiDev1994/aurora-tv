@@ -121,3 +121,10 @@ Temporary Items
 
 .virtualenv.smbdelete*
 .smbdelete*
+
+# Local Cursor skills / project agent config (do not push)
+.cursor/
+
+# Local dev cache and agent artifacts (do not push)
+.cache/
+.superpowers/

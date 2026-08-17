@@ -12,6 +12,7 @@
 
 #include "util/user_event.h"
 #include "util/bus.h"
+#include "util/log_overlay.h"
 #include "lv_drv_sdl_key.h"
 #include "stream/session_events.h"
 
@@ -35,6 +36,48 @@ static bool read_keyboard(app_ui_input_t *input, const SDL_KeyboardEvent *event,
 
 static bool read_event(const SDL_Event *event, lv_drv_sdl_key_t *state);
 
+/** Left-stick edge → one LVGL key (punktfunk-style menu nav). */
+static bool read_stick_menu_nav(const SDL_ControllerAxisEvent *axis, lv_drv_sdl_key_t *state) {
+    enum { DEAD = 16000 };
+    static int8_t held_x; /* -1 left, 0, +1 right */
+    static int8_t held_y; /* -1 up, 0, +1 down */
+
+    int8_t *held = NULL;
+    lv_key_t neg_key = 0, pos_key = 0;
+    if (axis->axis == SDL_CONTROLLER_AXIS_LEFTX) {
+        held = &held_x;
+        neg_key = LV_KEY_LEFT;
+        pos_key = LV_KEY_RIGHT;
+    } else if (axis->axis == SDL_CONTROLLER_AXIS_LEFTY) {
+        held = &held_y;
+        neg_key = LV_KEY_UP;
+        pos_key = LV_KEY_DOWN;
+    } else {
+        return false;
+    }
+
+    int8_t dir = 0;
+    if (axis->value <= -DEAD) {
+        dir = -1;
+    } else if (axis->value >= DEAD) {
+        dir = 1;
+    }
+    if (dir == *held) {
+        return false;
+    }
+    if (dir == 0) {
+        *held = 0;
+        return false;
+    }
+    *held = dir;
+    state->key = dir < 0 ? neg_key : pos_key;
+    state->state = LV_INDEV_STATE_PRESSED;
+    return true;
+}
+
+static lv_key_t stick_auto_release_key;
+static bool stick_auto_release;
+
 static void sdl_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data);
 
 int lv_sdl_init_key_input(lv_drv_sdl_key_t *drv, app_ui_input_t *input) {
@@ -57,6 +100,18 @@ static void sdl_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
     app_ui_input_t *input = drv->user_data;
     app_t *app = input->ui->app;
     lv_drv_sdl_key_t *state = (lv_drv_sdl_key_t *) drv;
+
+    /* Complete one-shot stick presses so LVGL sees press + release. */
+    if (stick_auto_release) {
+        state->key = stick_auto_release_key;
+        state->state = LV_INDEV_STATE_RELEASED;
+        stick_auto_release = false;
+        data->key = state->key;
+        data->state = state->state;
+        data->continue_reading = true;
+        return;
+    }
+
     SDL_Event e;
     if (state->text_remain > 0) {
         if (state->state == LV_INDEV_STATE_PRESSED) {
@@ -74,6 +129,15 @@ static void sdl_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
     } else if (SDL_PeepEvents(&e, 1, SDL_GETEVENT, SDL_KEYDOWN, SDL_KEYUP) > 0) {
 #if TARGET_WEBOS
         webos_key_input_mode(input, &e.key);
+        /* punktfunk-style: Yellow cycles on-screen log (Off → Live → Frozen). */
+        if ((int) e.key.keysym.scancode == SDL_SCANCODE_WEBOS_YELLOW) {
+            if (e.type == SDL_KEYDOWN) {
+                log_overlay_cycle();
+            }
+            state->state = LV_INDEV_STATE_RELEASED;
+            data->continue_reading = true;
+            return;
+        }
 #endif
         bool nav_to_lvgl = false;
         bool back_closes_kbd = false;
@@ -128,6 +192,19 @@ static void sdl_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
                 }
             }
             handled_modal = true; /* swallow LT while keyboard is open */
+        } else if (e.type == SDL_CONTROLLERAXISMOTION
+                   && (e.caxis.axis == SDL_CONTROLLER_AXIS_LEFTX || e.caxis.axis == SDL_CONTROLLER_AXIS_LEFTY)
+                   && (ui_modal_consumes_input() || app->session == NULL
+                       || ui_should_block_input())) {
+            /* Settings / launcher UI: left stick = D-pad (edge detect). */
+            if (read_stick_menu_nav(&e.caxis, state)) {
+                stick_auto_release_key = state->key;
+                stick_auto_release = true;
+                handled_modal = true;
+                ui_set_input_mode(input, UI_INPUT_MODE_GAMEPAD);
+            } else {
+                handled_modal = true; /* swallow stick noise in UI */
+            }
         } else if (ui_modal_consumes_input()
             && (e.type == SDL_CONTROLLERBUTTONDOWN || e.type == SDL_CONTROLLERBUTTONUP)) {
             bool pressed = (e.cbutton.state == SDL_PRESSED);
@@ -193,7 +270,8 @@ static void sdl_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
                 }
             }
         }
-        if (!handled_modal && app->session != NULL && session_handle_input_event(app->session, &e)) {
+        if (!handled_modal && app->session != NULL && _lv_ll_is_empty(&input->modal_groups)
+            && session_handle_input_event(app->session, &e)) {
             state->state = LV_INDEV_STATE_RELEASED;
         } else if (!handled_modal && !ui_modal_consumes_input()) {
             /* Avoid switching input mode while soft keyboard is open – prevents KEY ↔ GAMEPAD
@@ -375,7 +453,6 @@ static bool read_webos_key(app_ui_input_t *input, const SDL_KeyboardEvent *event
         }
         case SDL_SCANCODE_WEBOS_RED:
         case SDL_SCANCODE_WEBOS_GREEN:
-        case SDL_SCANCODE_WEBOS_YELLOW:
         case SDL_SCANCODE_WEBOS_BLUE: {
             SDL_Event btn_event;
             SDL_memcpy(&btn_event.key, event, sizeof(SDL_KeyboardEvent));
@@ -383,6 +460,9 @@ static bool read_webos_key(app_ui_input_t *input, const SDL_KeyboardEvent *event
             SDL_PushEvent(&btn_event);
             return false;
         }
+        case SDL_SCANCODE_WEBOS_YELLOW:
+            /* Handled in sdl_input_read peep path. */
+            return false;
         default:
             return false;
     }

@@ -227,12 +227,15 @@ static int vdec_finish_feed(SS4S_VideoFeedResult result, PDECODE_UNIT decodeUnit
         } else {
             frames_since_idr++;
         }
+        /* Optional periodic HEVC IDR (Settings → Video). Off by default (0).
+         * When enabled (e.g. 10000 ms) it can cause a hitch every interval. */
         const int idr_ms = app_configuration ? app_configuration->idr_refresh_interval_ms : 0;
         const bool hevc_stream = vdec_stream_format == VIDEO_FORMAT_H265 ||
                                  vdec_stream_format == VIDEO_FORMAT_H265_MAIN10;
         if (hevc_stream && idr_ms >= 500 && vdec_stream_target_fps > 0) {
             const int frames_threshold = (vdec_stream_target_fps * idr_ms + 500) / 1000;
             if (frames_threshold > 0 && frames_since_idr >= frames_threshold) {
+                commons_log_info("Session", "IDR reason: periodic refresh (%d ms)", idr_ms);
                 LiRequestIdrFrame();
                 frames_since_idr = 0;
             }
@@ -244,10 +247,12 @@ static int vdec_finish_feed(SS4S_VideoFeedResult result, PDECODE_UNIT decodeUnit
         vdec_temp_stats.submittedFrames++;
         if (need_idr_on_resume) {
             need_idr_on_resume = false;
+            commons_log_info("Session", "IDR reason: resume after decoder NOT_READY/BufferFull");
             return DR_NEED_IDR;
         }
         return DR_OK;
     } else if (result == SS4S_VIDEO_FEED_REQUEST_KEYFRAME) {
+        commons_log_info("Session", "IDR reason: decoder REQUEST_KEYFRAME");
         return DR_NEED_IDR;
     } else if (result == SS4S_VIDEO_FEED_NOT_READY) {
         need_idr_on_resume = true;

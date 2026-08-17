@@ -7,6 +7,7 @@
 #include "stream/connection/session_connection.h"
 #include "stream/session_priv.h"
 #include "logging.h"
+#include "config.h"
 
 #define SAMPLES_PER_FRAME  240
 
@@ -45,7 +46,6 @@ static int aud_init(int audioConfiguration, const POPUS_MULTISTREAM_CONFIGURATIO
             return -1;
         }
         codecDataLen = opus_head_serialize(opusConfig, buffer);
-        commons_log_info("Session", "Audio path: Opus passthrough (%d ch)", opusConfig->channelCount);
     } else {
         int rc;
         decoder = opus_multistream_decoder_create(opusConfig->sampleRate, opusConfig->channelCount, opusConfig->streams,
@@ -62,7 +62,6 @@ static int aud_init(int audioConfiguration, const POPUS_MULTISTREAM_CONFIGURATIO
             decoder = NULL;
             return -1;
         }
-        commons_log_info("Session", "Audio path: client Opus→PCM (%d ch)", opusConfig->channelCount);
     }
     audio_stream_info.format = SS4S_AudioCodecName(codec);
     switch (audioConfiguration) {

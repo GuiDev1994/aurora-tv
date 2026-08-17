@@ -42,6 +42,8 @@ typedef struct {
     lv_obj_t *close_btn;
 
     lv_obj_t *active_dropdown;
+    /** Block Enter/click synthesis right after opening a pane popup. */
+    bool suppress_item_activate;
     /** Set when Back closes an open dropdown; suppresses closing the pane popup on the same press. */
     bool suppress_pane_back;
 
@@ -78,3 +80,4 @@ extern const lv_fragment_class_t settings_pane_host_cls;
 extern const lv_fragment_class_t settings_pane_input_cls;
 extern const lv_fragment_class_t settings_pane_audio_cls;
 extern const lv_fragment_class_t settings_pane_video_cls;
+extern const lv_fragment_class_t settings_pane_experimental_cls;
