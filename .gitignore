@@ -128,3 +128,6 @@ Temporary Items
 # Local dev cache and agent artifacts (do not push)
 .cache/
 .superpowers/
+
+# Machine-local MCP server config
+.mcp.json
