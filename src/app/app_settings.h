@@ -73,7 +73,7 @@ typedef struct app_settings_t {
     bool auto_adjust_bitrate;
     int abr_mode;
     /**
-     * webOS rooted only: switch picture/sound to Game mode for the stream (ALLM stand-in).
+     * webOS rooted only: switch picture/sound to Game for the stream (not HDMI ALLM).
      * Default on; UI row only shown when Homebrew Channel elevated service is present.
      */
     bool game_mode;

@@ -10,6 +10,10 @@
 #include "stream/adaptive_bitrate.h"
 #include "embed_wrapper.h"
 
+#if TARGET_WEBOS
+#include "platform/webos/game_mode.h"
+#endif
+
 typedef struct app_t app_t;
 
 struct session_t {
@@ -38,6 +42,9 @@ struct session_t {
     SDL_Thread *thread;
     SS4S_Player *player;
     adaptive_bitrate_service_t *abr;
+#if TARGET_WEBOS
+    webos_game_mode_state_t *webos_game_mode;
+#endif
 };
 
 void session_set_state(session_t *session, STREAMING_STATE state);

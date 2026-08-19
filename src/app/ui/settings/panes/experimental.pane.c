@@ -57,10 +57,6 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     lv_obj_t *logs = pref_checkbox(view, locstr("Show logs"),
                                    &app_configuration->show_logs, false);
     lv_obj_add_event_cb(logs, on_show_logs_changed, LV_EVENT_VALUE_CHANGED, NULL);
-    pref_desc_label(view,
-                    locstr("On-screen log tail (punktfunk-style). "
-                           "Starts Live when ON. Magic Remote Yellow: Live → Frozen → Off."),
-                    false);
     if (app_configuration->show_logs) {
         log_overlay_set_enabled(true);
     }
@@ -69,8 +65,7 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     if (webos_game_mode_is_rooted()) {
         pref_checkbox(view, locstr("Game mode"), &app_configuration->game_mode, false);
         pref_desc_label(view,
-                        locstr("Rooted: Game picture/sound + motion/AI/energy pack. "
-                               "Restored when the stream ends."),
+                        locstr("Picture/sound Game for the stream (IGR on). Restored when it ends."),
                         false);
     }
 #endif

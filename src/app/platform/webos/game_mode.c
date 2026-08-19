@@ -12,6 +12,8 @@
 
 #define HBCHANNEL_SERVICE_DIR \
     "/media/developer/apps/usr/palm/services/org.webosbrew.hbchannel.service"
+#define HBCHANNEL_SERVICE_DIR_CRYPTO \
+    "/media/cryptofs/apps/usr/palm/services/org.webosbrew.hbchannel.service"
 #define URI_HBCHANNEL_EXEC "luna://org.webosbrew.hbchannel.service/exec"
 
 typedef struct applied_setting {
@@ -24,6 +26,7 @@ struct webos_game_mode_state {
     applied_setting_t *items;
     size_t count;
     size_t capacity;
+    bool picture_mode_ok;
 };
 
 static bool path_is_dir(const char *path) {
@@ -34,7 +37,7 @@ static bool path_is_dir(const char *path) {
 bool webos_game_mode_is_rooted(void) {
     static int cached = -1;
     if (cached < 0) {
-        cached = path_is_dir(HBCHANNEL_SERVICE_DIR) ? 1 : 0;
+        cached = (path_is_dir(HBCHANNEL_SERVICE_DIR) || path_is_dir(HBCHANNEL_SERVICE_DIR_CRYPTO)) ? 1 : 0;
         commons_log_info("GameMode", "webosbrew root probe: %s",
                          cached ? "rooted (hbchannel service present)" : "not rooted");
     }
@@ -76,7 +79,7 @@ static bool json_return_value_true(const char *json) {
 }
 
 static char *exec_root_luna(const char *method, const char *inner_body_json) {
-    char command[1024];
+    char command[1400];
     int n = snprintf(command, sizeof(command),
                      "luna-send -n 1 luna://com.webos.settingsservice/%s '%s'",
                      method, inner_body_json);
@@ -122,10 +125,16 @@ static char *exec_root_luna(const char *method, const char *inner_body_json) {
 }
 
 static char *get_setting(const char *category, const char *key) {
-    char body[256];
+    char body[320];
     snprintf(body, sizeof(body),
              "{\"category\":\"%s\",\"keys\":[\"%s\"]}", category, key);
     char *out = exec_root_luna("getSystemSettings", body);
+    if (out == NULL || !json_return_value_true(out)) {
+        snprintf(body, sizeof(body),
+                 "{\"category\":\"%s\",\"keys\":[\"%s\"],\"current_app\":true}", category, key);
+        free(out);
+        out = exec_root_luna("getSystemSettings", body);
+    }
     if (out == NULL) {
         return NULL;
     }
@@ -147,21 +156,33 @@ static char *get_setting(const char *category, const char *key) {
     return result;
 }
 
-static bool set_setting(const char *category, const char *key, const char *value) {
-    char body[320];
-    snprintf(body, sizeof(body),
-             "{\"category\":\"%s\",\"settings\":{\"%s\":\"%s\"}}",
-             category, key, value);
+static bool set_setting_body(const char *body, bool log_fail) {
     char *out = exec_root_luna("setSystemSettings", body);
     if (out == NULL) {
         return false;
     }
     bool ok = json_return_value_true(out);
-    if (!ok) {
+    if (!ok && log_fail) {
         commons_log_warn("GameMode", "setSystemSettings rejected: %s", out);
     }
     free(out);
     return ok;
+}
+
+static bool set_setting(const char *category, const char *key, const char *value) {
+    char body[384];
+    /* webOS 10.3 (C5): pictureMode/soundMode reject current_app ("???") / DBTYPE.
+     * truMotion-style keys often need current_app. Try global first, then app. */
+    snprintf(body, sizeof(body),
+             "{\"category\":\"%s\",\"settings\":{\"%s\":\"%s\"}}",
+             category, key, value);
+    if (set_setting_body(body, false)) {
+        return true;
+    }
+    snprintf(body, sizeof(body),
+             "{\"category\":\"%s\",\"settings\":{\"%s\":\"%s\"},\"current_app\":true}",
+             category, key, value);
+    return set_setting_body(body, true);
 }
 
 static void state_push(webos_game_mode_state_t *state, const char *category, const char *key,
@@ -183,47 +204,40 @@ static void state_push(webos_game_mode_state_t *state, const char *category, con
     };
 }
 
-static void apply_one(webos_game_mode_state_t *state, const char *category, const char *key,
+static bool apply_one(webos_game_mode_state_t *state, const char *category, const char *key,
                       const char *value) {
     char *previous = get_setting(category, key);
+    if (previous != NULL && strcmp(previous, value) == 0) {
+        commons_log_info("GameMode", "%s.%s already %s", category, key, value);
+        free(previous);
+        return true;
+    }
     if (!set_setting(category, key, value)) {
         commons_log_warn("GameMode", "failed to set %s.%s=%s", category, key, value);
         free(previous);
-        return;
+        return false;
     }
     commons_log_info("GameMode", "%s.%s -> %s (was %s)", category, key, value,
                      previous ? previous : "(unknown)");
-    char *restore = NULL;
-    if (previous != NULL && strcmp(previous, value) != 0) {
-        restore = previous;
-        previous = NULL;
-    }
-    free(previous);
-    state_push(state, category, key, restore);
+    state_push(state, category, key, previous);
+    return true;
 }
 
-static void apply_one_any(webos_game_mode_state_t *state, const char *category, const char *key,
-                          const char *const *values, size_t nvalues) {
+static bool apply_one_any(webos_game_mode_state_t *state, const char *category, const char *key,
+                          const char *const *values, size_t nvalues, bool try_all) {
     for (size_t i = 0; i < nvalues; i++) {
         if (values[i] == NULL || values[i][0] == '\0') {
             continue;
         }
-        char *previous = get_setting(category, key);
-        if (set_setting(category, key, values[i])) {
-            commons_log_info("GameMode", "%s.%s -> %s (was %s)", category, key, values[i],
-                             previous ? previous : "(unknown)");
-            char *restore = NULL;
-            if (previous != NULL && strcmp(previous, values[i]) != 0) {
-                restore = previous;
-                previous = NULL;
-            }
-            free(previous);
-            state_push(state, category, key, restore);
-            return;
+        if (apply_one(state, category, key, values[i])) {
+            return true;
         }
-        free(previous);
+        if (!try_all) {
+            break;
+        }
     }
-    commons_log_warn("GameMode", "no accepted value for %s.%s (skipped)", category, key);
+    commons_log_info("GameMode", "skipped %s.%s (not in this firmware/context)", category, key);
+    return false;
 }
 
 webos_game_mode_state_t *webos_game_mode_enter(bool hdr) {
@@ -234,43 +248,50 @@ webos_game_mode_state_t *webos_game_mode_enter(bool hdr) {
     if (state == NULL) {
         return NULL;
     }
-    apply_one(state, "picture", "pictureMode", hdr ? "hdrGame" : "game");
-    apply_one(state, "sound", "soundMode", "game");
-    apply_one(state, "picture", "peakBrightness", "high");
 
-    static const char *off_vals[] = {"off", "Off", "false", "0", "disabled", "none"};
-    static const char *on_vals[] = {"on", "On", "true", "1", "enabled"};
-    static const char *energy_vals[] = {"off", "Off", "minimum", "min", "false", "0"};
+    commons_log_info("GameMode", "app Game+IGR (not HDMI ALLM; overlay D= is NDL queue, unchanged)");
+    /* Connecting UI is still SDR. hdrGame is rejected ("no matched extended item")
+     * until HDR actually engages — start with SDR Game, then HDR aliases. */
+    static const char *pic_sdr[] = {"game", "hdrGame", "dolbyHdrGame"};
+    (void) hdr;
+    state->picture_mode_ok = apply_one_any(state, "picture", "pictureMode",
+                                           pic_sdr, sizeof(pic_sdr) / sizeof(pic_sdr[0]), true);
 
-    apply_one_any(state, "picture", "truMotionMode", off_vals, sizeof(off_vals) / sizeof(off_vals[0]));
-    apply_one_any(state, "picture", "oledMotionPro", off_vals, sizeof(off_vals) / sizeof(off_vals[0]));
-    apply_one_any(state, "picture", "realCinema", off_vals, sizeof(off_vals) / sizeof(off_vals[0]));
-    apply_one_any(state, "picture", "motionEyeCare", off_vals, sizeof(off_vals) / sizeof(off_vals[0]));
-    apply_one_any(state, "picture", "noiseReduction", off_vals, sizeof(off_vals) / sizeof(off_vals[0]));
-    apply_one_any(state, "picture", "mpegNoiseReduction", off_vals, sizeof(off_vals) / sizeof(off_vals[0]));
-    apply_one_any(state, "picture", "dynamicContrast", off_vals, sizeof(off_vals) / sizeof(off_vals[0]));
-    apply_one_any(state, "picture", "dynamicColor", off_vals, sizeof(off_vals) / sizeof(off_vals[0]));
-    apply_one_any(state, "picture", "superResolution", off_vals, sizeof(off_vals) / sizeof(off_vals[0]));
-    apply_one_any(state, "picture", "aiPictureMode", off_vals, sizeof(off_vals) / sizeof(off_vals[0]));
-    apply_one_any(state, "picture", "aiBrightness", off_vals, sizeof(off_vals) / sizeof(off_vals[0]));
-    apply_one_any(state, "picture", "hdrDynamicToneMapping", off_vals, sizeof(off_vals) / sizeof(off_vals[0]));
-    apply_one_any(state, "picture", "energySaving", energy_vals, sizeof(energy_vals) / sizeof(energy_vals[0]));
-    apply_one_any(state, "sound", "autoVolume", off_vals, sizeof(off_vals) / sizeof(off_vals[0]));
-    apply_one_any(state, "picture", "instantGameResponse", on_vals, sizeof(on_vals) / sizeof(on_vals[0]));
-    apply_one_any(state, "picture", "gameOptimiser", on_vals, sizeof(on_vals) / sizeof(on_vals[0]));
+    static const char *sound_vals[] = {"game", "standard"};
+    apply_one_any(state, "sound", "soundMode", sound_vals, sizeof(sound_vals) / sizeof(sound_vals[0]), true);
+
+    if (state->picture_mode_ok) {
+        static const char *off_vals[] = {"off"};
+        static const char *on_vals[] = {"on"};
+        apply_one_any(state, "picture", "truMotionMode", off_vals, 1, false);
+        apply_one_any(state, "picture", "instantGameResponse", on_vals, 1, false);
+        apply_one_any(state, "picture", "gameOptimiser", on_vals, 1, false);
+    }
 
     if (state->count == 0) {
+        commons_log_warn("GameMode", "no settings applied");
         free(state);
         return NULL;
     }
     return state;
 }
 
+void webos_game_mode_on_hdr(webos_game_mode_state_t *state, bool hdr) {
+    if (state == NULL || !hdr) {
+        return;
+    }
+    static const char *pic_hdr[] = {"hdrGame", "dolbyHdrGame"};
+    if (apply_one_any(state, "picture", "pictureMode", pic_hdr, 2, true)) {
+        static const char *peak[] = {"high", "medium"};
+        apply_one_any(state, "picture", "peakBrightness", peak, 2, false);
+        state->picture_mode_ok = true;
+    }
+}
+
 void webos_game_mode_restore(webos_game_mode_state_t *state) {
     if (state == NULL) {
         return;
     }
-    /* Reverse order so pictureMode/soundMode come back last. */
     for (size_t i = state->count; i > 0; i--) {
         applied_setting_t *a = &state->items[i - 1];
         if (a->restore_to == NULL) {

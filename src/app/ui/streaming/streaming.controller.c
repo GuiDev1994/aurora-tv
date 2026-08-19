@@ -131,6 +131,64 @@ bool streaming_stats_shown() {
     return overlay_showing || overlay_pinned;
 }
 
+static int sys_cpu_pct = -1;
+static int sys_ram_pct = -1;
+static unsigned sys_ram_used_mb;
+static unsigned sys_ram_total_mb;
+static unsigned long long sys_cpu_idle;
+static unsigned long long sys_cpu_total;
+
+/* ~1 Hz via streaming_refresh_stats. Two small /proc reads, no extra threads. */
+static void sample_sys_load(void) {
+    FILE *f = fopen("/proc/stat", "r");
+    if (f != NULL) {
+        unsigned long long u = 0, n = 0, s = 0, idle = 0, iw = 0, irq = 0, sirq = 0, st = 0;
+        if (fscanf(f, "cpu %llu %llu %llu %llu %llu %llu %llu %llu",
+                   &u, &n, &s, &idle, &iw, &irq, &sirq, &st) >= 4) {
+            unsigned long long idle_all = idle + iw;
+            unsigned long long total = u + n + s + idle + iw + irq + sirq + st;
+            if (sys_cpu_total > 0 && total > sys_cpu_total) {
+                unsigned long long dt = total - sys_cpu_total;
+                unsigned long long di = idle_all - sys_cpu_idle;
+                int pct = (int) (((dt - di) * 100) / dt);
+                if (pct < 0) {
+                    pct = 0;
+                } else if (pct > 100) {
+                    pct = 100;
+                }
+                sys_cpu_pct = pct;
+            }
+            sys_cpu_idle = idle_all;
+            sys_cpu_total = total;
+        }
+        fclose(f);
+    }
+
+    f = fopen("/proc/meminfo", "r");
+    if (f != NULL) {
+        char key[32];
+        unsigned long val = 0;
+        unsigned long mem_total = 0, mem_avail = 0;
+        int got = 0;
+        while (got < 2 && fscanf(f, "%31s %lu kB", key, &val) == 2) {
+            if (strcmp(key, "MemTotal:") == 0) {
+                mem_total = val;
+                got++;
+            } else if (strcmp(key, "MemAvailable:") == 0) {
+                mem_avail = val;
+                got++;
+            }
+        }
+        fclose(f);
+        if (mem_total > 0) {
+            unsigned long used = mem_total > mem_avail ? mem_total - mem_avail : 0;
+            sys_ram_total_mb = (unsigned) ((mem_total + 512) / 1024);
+            sys_ram_used_mb = (unsigned) ((used + 512) / 1024);
+            sys_ram_pct = (int) (used * 100 / mem_total);
+        }
+    }
+}
+
 bool streaming_refresh_stats() {
     streaming_controller_t *controller = current_controller;
     if (!controller) { return false; }
@@ -140,6 +198,7 @@ bool streaming_refresh_stats() {
     app_t *app = controller->global;
     const struct VIDEO_STATS *dst = &vdec_summary_stats;
     const struct VIDEO_INFO *info = &vdec_stream_info;
+    sample_sys_load();
 
     if (controller->stats_compact_label != NULL) {
         char stats_line[384];
@@ -218,6 +277,17 @@ bool streaming_refresh_stats() {
                 snprintf(stats_line + len, sizeof(stats_line) - (size_t) len, " | %s", audio_ch);
             }
         }
+        if (sys_ram_pct >= 0) {
+            size_t used = strlen(stats_line);
+            if (used < sizeof(stats_line) - 16) {
+                if (sys_cpu_pct >= 0) {
+                    snprintf(stats_line + used, sizeof(stats_line) - used, " C%d%% R%d%%",
+                             sys_cpu_pct, sys_ram_pct);
+                } else {
+                    snprintf(stats_line + used, sizeof(stats_line) - used, " R%d%%", sys_ram_pct);
+                }
+            }
+        }
         lv_label_set_text(controller->stats_compact_label, stats_line);
         /* Quality dot: green ≤25ms, yellow ≤30ms, red >30ms */
         if (controller->stats_quality_indicator) {
@@ -237,6 +307,17 @@ bool streaming_refresh_stats() {
     } else {
         lv_label_set_text_fmt(controller->stats_items.decoder, "%s %s (%s)", codec, hdr_str,
                               SS4S_ModuleInfoGetId(app->ss4s.selection.video_module));
+    }
+    if (controller->stats_items.cpu_ram != NULL) {
+        if (sys_cpu_pct >= 0 && sys_ram_total_mb > 0) {
+            lv_label_set_text_fmt(controller->stats_items.cpu_ram, "%d%% · %u/%uM",
+                                  sys_cpu_pct, sys_ram_used_mb, sys_ram_total_mb);
+        } else if (sys_ram_total_mb > 0) {
+            lv_label_set_text_fmt(controller->stats_items.cpu_ram, "- · %u/%uM",
+                                  sys_ram_used_mb, sys_ram_total_mb);
+        } else {
+            lv_label_set_text(controller->stats_items.cpu_ram, "-");
+        }
     }
     lv_label_set_text_fmt(controller->stats_items.audio, "%s, %s (%s)", audio_stream_info.format,
                           audio_stream_info.channels, SS4S_ModuleInfoGetId(app->ss4s.selection.audio_module));

@@ -17,6 +17,10 @@
 #include "session_worker.h"
 #include "stream/input/session_virt_mouse.h"
 
+#if TARGET_WEBOS
+#include "platform/webos/game_mode.h"
+#endif
+
 // Expected luminance values in SEI are in units of 0.0001 cd/m2
 #define LUMINANCE_SCALE 10000
 
@@ -242,6 +246,9 @@ void streaming_set_hdr(session_t *session, bool hdr) {
         populate_hdr_info_vui(&info, &session->config.stream);
         SS4S_PlayerVideoSetHDRInfo(session->player, &info);
     }
+#if TARGET_WEBOS
+    webos_game_mode_on_hdr(session->webos_game_mode, hdr);
+#endif
 }
 
 void streaming_error(session_t *session, int code, const char *fmt, ...) {

@@ -1014,7 +1014,10 @@ static void pane_child_attach_handlers(settings_controller_t *controller, lv_obj
     lv_obj_add_flag(child, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
     lv_obj_add_event_cb(child, settings_item_nav_preprocess, LV_EVENT_KEY | LV_EVENT_PREPROCESS, controller);
     lv_obj_add_event_cb(child, on_detail_key, LV_EVENT_KEY, controller);
-    settings_style_embed_focus(child);
+    /* Focus ring belongs on the widget (dropdown/slider/checkbox), not the labelled row. */
+    if (!pref_obj_is_focus_row(child)) {
+        settings_style_embed_focus(child);
+    }
     if (pref_obj_is_focus_row(child)) {
         lv_obj_add_flag(child, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(child, settings_row_pointer_cb, LV_EVENT_CLICKED, controller);

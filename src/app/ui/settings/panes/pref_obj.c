@@ -47,15 +47,28 @@ static const lv_obj_class_t pref_row_class = {
     .instance_size = sizeof(pref_row_t),
 };
 
-static void pref_row_dropdown_focus_sync_cb(lv_event_t *event) {
-    lv_obj_t *row = lv_event_get_user_data(event);
-    if (row == NULL || !pref_obj_is_focus_row(row)) {
+static void pref_apply_focus_ring(lv_obj_t *obj) {
+    if (obj == NULL) {
+        return;
+    }
+    lv_obj_set_style_outline_width(obj, 0, LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_outline_pad(obj, 0, LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_border_side(obj, LV_BORDER_SIDE_FULL, LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_border_width(obj, LV_DPX(2), LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_border_color(obj, ml_color_hex(ML_COLOR_FOCUS), LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_border_opa(obj, LV_OPA_COVER, LV_STATE_FOCUS_KEY);
+}
+
+static void pref_row_sync_bound_focus_cb(lv_event_t *event) {
+    lv_obj_t *row = lv_event_get_target(event);
+    lv_obj_t *ctrl = pref_row_get_control(row);
+    if (ctrl == NULL) {
         return;
     }
     if (lv_event_get_code(event) == LV_EVENT_FOCUSED) {
-        lv_obj_add_state(row, LV_STATE_FOCUS_KEY);
+        lv_obj_add_state(ctrl, LV_STATE_FOCUS_KEY);
     } else if (lv_event_get_code(event) == LV_EVENT_DEFOCUSED) {
-        lv_obj_clear_state(row, LV_STATE_FOCUS_KEY);
+        lv_obj_clear_state(ctrl, LV_STATE_FOCUS_KEY);
     }
 }
 
@@ -134,19 +147,17 @@ void pref_row_bind_control(lv_obj_t *row, lv_obj_t *control) {
         return;
     }
     ((pref_row_t *) row)->control = control;
+    pref_apply_focus_ring(control);
     if (lv_obj_has_class(control, &lv_dropdown_class)) {
-        /* Dropdown stays in the D-pad group; the row is visual-only (label + focus ring). */
-        lv_obj_add_event_cb(control, pref_row_dropdown_focus_sync_cb, LV_EVENT_FOCUSED, row);
-        lv_obj_add_event_cb(control, pref_row_dropdown_focus_sync_cb, LV_EVENT_DEFOCUSED, row);
+        /* Dropdown stays in the D-pad group; focus ring stays on the combobox, not the title. */
         return;
     }
     lv_obj_add_flag(control, PREF_ROW_BOUND_FLAG);
     if (lv_obj_get_group(control) != NULL) {
         lv_group_remove_obj(control);
     }
-    if (lv_obj_has_class(control, &lv_slider_class)) {
-        lv_obj_clear_flag(control, LV_OBJ_FLAG_CLICKABLE);
-    }
+    lv_obj_add_event_cb(row, pref_row_sync_bound_focus_cb, LV_EVENT_FOCUSED, NULL);
+    lv_obj_add_event_cb(row, pref_row_sync_bound_focus_cb, LV_EVENT_DEFOCUSED, NULL);
 }
 
 static void pref_checkable_pointer_cb(lv_event_t *event);
@@ -302,6 +313,7 @@ lv_obj_t *pref_slider(lv_obj_t *parent, int *value, int min, int max, int step) 
     attrs->slider.ref = value;
     attrs->slider.step = step;
     lv_obj_add_event_cb(slider, pref_slider_value_write_back, LV_EVENT_PRESSING, attrs);
+    lv_obj_add_event_cb(slider, pref_slider_value_write_back, LV_EVENT_VALUE_CHANGED, attrs);
     lv_obj_add_event_cb(slider, pref_slider_value_write_back, LV_EVENT_KEY, attrs);
     lv_obj_add_event_cb(slider, pref_attrs_free, LV_EVENT_DELETE, attrs);
     return slider;
@@ -426,18 +438,18 @@ static void pref_dropdown_string_change_cb(lv_event_t *event) {
 static void pref_slider_value_write_back(lv_event_t *event) {
     pref_attrs_t *attrs = lv_event_get_user_data(event);
     lv_obj_t *target = lv_event_get_current_target(event);
+    const lv_event_code_t code = lv_event_get_code(event);
     int value = lv_slider_get_value(target);
-    if (lv_event_get_code(event) == LV_EVENT_KEY) {
+    if (code == LV_EVENT_KEY) {
         uint32_t key = lv_event_get_key(event);
         if (key == LV_KEY_LEFT || key == LV_KEY_RIGHT) {
-            /* Cancel in-flight knob animation so LEFT/RIGHT value edits feel instant. */
             _lv_bar_anim_t *var = &((lv_slider_t *) target)->bar.cur_value_anim;
             var->anim_state = -1;
             lv_anim_del(var, NULL);
-            lv_slider_set_value(target, *attrs->slider.ref / attrs->slider.step, LV_ANIM_OFF);
-            return;
         }
     }
     *attrs->slider.ref = value * attrs->slider.step;
-    lv_event_send(target, LV_EVENT_VALUE_CHANGED, NULL);
+    if (code != LV_EVENT_VALUE_CHANGED) {
+        lv_event_send(target, LV_EVENT_VALUE_CHANGED, NULL);
+    }
 }

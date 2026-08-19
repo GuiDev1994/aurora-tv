@@ -31,6 +31,7 @@ typedef struct {
         lv_obj_t *host_latency;
         lv_obj_t *vdec_latency;
         lv_obj_t *render_queue;
+        lv_obj_t *cpu_ram;
     } stats_items;
     lv_obj_t *stats_compact_label;  /* Single-line stats when show_stats_compact */
     lv_obj_t *stats_quality_indicator;  /* Colored dot: green/yellow/red by latency */

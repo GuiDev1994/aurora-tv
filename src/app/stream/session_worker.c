@@ -16,6 +16,7 @@
 
 #if TARGET_WEBOS
 #include "platform/webos/game_mode.h"
+#include "platform/webos/stream_priority.h"
 #endif
 
 #include <stdlib.h>
@@ -53,12 +54,19 @@ int session_worker(session_t *session) {
     session->player = NULL;
 #if TARGET_WEBOS
     webos_game_mode_state_t *game_mode_state = NULL;
+    webos_stream_priority_state_t *stream_prio = NULL;
+    session->webos_game_mode = NULL;
 #endif
 
 #if FEATURE_INPUT_EVMOUSE
     if (!session->config.view_only && session->config.hardware_mouse) {
         session_evmouse_wait_ready(&session->input.evmouse);
     }
+#endif
+
+#if TARGET_WEBOS
+    /* USB/net buffers must land before UDP sockets (LiStartConnection). */
+    stream_prio = webos_stream_priority_enter();
 #endif
 
     commons_log_info("Session", "Launch app %d (host currentGame=%d)...", appId, server->currentGame);
@@ -110,6 +118,7 @@ int session_worker(session_t *session) {
         const bool hdr = session->app->settings.hdr &&
                          (session->config.stream.supportedVideoFormats & VIDEO_FORMAT_MASK_10BIT) != 0;
         game_mode_state = webos_game_mode_enter(hdr);
+        session->webos_game_mode = game_mode_state;
     }
 #endif
 
@@ -180,8 +189,11 @@ int session_worker(session_t *session) {
     session_set_state(session, STREAMING_NONE);
     thread_cleanup:
 #if TARGET_WEBOS
+    session->webos_game_mode = NULL;
     webos_game_mode_restore(game_mode_state);
     game_mode_state = NULL;
+    webos_stream_priority_leave(stream_prio);
+    stream_prio = NULL;
 #endif
     /* Restore only on a clean exit: streaming_errno != GS_OK means the session
      * ended in error/disconnect and the host is likely unreachable -- the
