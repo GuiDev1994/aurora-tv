@@ -37,6 +37,8 @@ static void stream_input_send_unannounced_gamepads(stream_input_t *input);
 
 static void stream_input_send_buttons(stream_input_t *input, app_gamepad_state_t *gamepad);
 
+static void stream_input_send_gamepad_battery(stream_input_t *input, app_gamepad_state_t *gamepad, bool force);
+
 static void cancel_stats_hold(void);
 
 static void cancel_all_holds(void);
@@ -410,8 +412,65 @@ void stream_input_send_gamepad_arrive(stream_input_t *input, app_gamepad_state_t
         commons_log_info("Input", "  controller capability: RGB LED");
     }
 #endif
+    if (input->report_gamepad_battery) {
+        SDL_Joystick *js = SDL_GameControllerGetJoystick(gamepad->controller);
+        if (js != NULL) {
+            SDL_JoystickPowerLevel level = SDL_JoystickCurrentPowerLevel(js);
+            if (level != SDL_JOYSTICK_POWER_UNKNOWN) {
+                capabilities |= LI_CCAP_BATTERY_STATE;
+                commons_log_info("Input", "  controller capability: battery");
+            }
+        }
+    }
     LiSendControllerArrivalEvent(gamepad->gs_id, stream_input_moonlight_active_mask(input), type, 0xFFFFFFFF,
                                  capabilities);
+    stream_input_send_gamepad_battery(input, gamepad, true);
+}
+
+static void stream_input_send_gamepad_battery(stream_input_t *input, app_gamepad_state_t *gamepad, bool force) {
+    if (!input->report_gamepad_battery || gamepad == NULL || gamepad->controller == NULL) {
+        return;
+    }
+    SDL_Joystick *js = SDL_GameControllerGetJoystick(gamepad->controller);
+    if (js == NULL) {
+        return;
+    }
+    SDL_JoystickPowerLevel level = SDL_JoystickCurrentPowerLevel(js);
+    uint8_t batteryState;
+    uint8_t batteryPercentage;
+    switch (level) {
+        case SDL_JOYSTICK_POWER_UNKNOWN:
+            return;
+        case SDL_JOYSTICK_POWER_EMPTY:
+            batteryState = LI_BATTERY_STATE_DISCHARGING;
+            batteryPercentage = 5;
+            break;
+        case SDL_JOYSTICK_POWER_LOW:
+            batteryState = LI_BATTERY_STATE_DISCHARGING;
+            batteryPercentage = 20;
+            break;
+        case SDL_JOYSTICK_POWER_MEDIUM:
+            batteryState = LI_BATTERY_STATE_DISCHARGING;
+            batteryPercentage = 50;
+            break;
+        case SDL_JOYSTICK_POWER_FULL:
+            batteryState = LI_BATTERY_STATE_FULL;
+            batteryPercentage = 90;
+            break;
+        case SDL_JOYSTICK_POWER_WIRED:
+            batteryState = LI_BATTERY_STATE_CHARGING;
+            batteryPercentage = LI_BATTERY_PERCENTAGE_UNKNOWN;
+            break;
+        default:
+            return;
+    }
+    if (!force && gamepad->lastBatteryState == batteryState &&
+        gamepad->lastBatteryPercentage == batteryPercentage) {
+        return;
+    }
+    gamepad->lastBatteryState = batteryState;
+    gamepad->lastBatteryPercentage = batteryPercentage;
+    LiSendControllerBatteryEvent((uint8_t) gamepad->gs_id, batteryState, batteryPercentage);
 }
 
 void stream_input_send_gamepad_remove(stream_input_t *input, app_gamepad_state_t *gamepad) {
@@ -448,6 +507,7 @@ static void stream_input_send_buttons(stream_input_t *input, app_gamepad_state_t
     LiSendMultiControllerEvent(gamepad->gs_id, input->input->activeGamepadMask, gamepad->buttons, gamepad->leftTrigger,
                                gamepad->rightTrigger, gamepad->leftStickX, gamepad->leftStickY, gamepad->rightStickX,
                                gamepad->rightStickY);
+    stream_input_send_gamepad_battery(input, gamepad, false);
 }
 
 static void cancel_stats_hold(void) {

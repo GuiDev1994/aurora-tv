@@ -2,7 +2,7 @@
 Type=Application
 Version=1.0
 Name=Aurora
-Comment=GameStream client for LG webOS and desktop
+Comment=NVIDIA GameStream Client, for LG webOS TV.
 Exec=moonlight-tv
 Icon=moonlight-tv
 Terminal=false

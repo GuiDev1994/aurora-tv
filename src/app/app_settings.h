@@ -49,7 +49,11 @@ typedef struct app_settings_t {
     bool swap_abxy;
     bool syskey_capture;
     bool hdr;   /* HDR10 (PQ) over HEVC Main10 or AV1 Main10 when host and decoder support it */
+    /** Negotiate HEVC/AV1 Main10 without requiring HDR (SDR 10-bit; less banding). */
+    bool force_10bit;
     bool force_full_color_range; /* SDR only: request full-range YUV (0-255) from host. No effect when HDR is on. */
+    /** Report pad battery to host (Vibepollo/Sunshine virtual gamepads). Default on. */
+    bool report_gamepad_battery;
     bool hevc;
     /** Sunshine/Apollo: negotiate AV1 Main8/Main10 when decoder exposes SS4S_VIDEO_AV1. */
     bool av1;

@@ -302,6 +302,7 @@ void session_config_init(app_t *app, session_config_t *config, const SERVER_DATA
     } else {
         config->stick_deadzone = (uint8_t) app_config->stick_deadzone;
     }
+    config->report_gamepad_battery = app_config->report_gamepad_battery;
     config->auto_adjust_bitrate = app_config->auto_adjust_bitrate;
     config->abr_mode = app_config->abr_mode;
 
@@ -323,13 +324,13 @@ void session_config_init(app_t *app, session_config_t *config, const SERVER_DATA
     }
     if (app_config->hevc && video_cap.codecs & SS4S_VIDEO_H265) {
         config->stream.supportedVideoFormats |= VIDEO_FORMAT_H265;
-        if (app_config->hdr && video_cap.hdr) {
+        if ((app_config->hdr && video_cap.hdr) || app_config->force_10bit) {
             config->stream.supportedVideoFormats |= VIDEO_FORMAT_H265_MAIN10;
         }
     }
     if (app_config->av1 && video_cap.codecs & SS4S_VIDEO_AV1) {
         config->stream.supportedVideoFormats |= VIDEO_FORMAT_AV1_MAIN8;
-        if (app_config->hdr && video_cap.hdr) {
+        if ((app_config->hdr && video_cap.hdr) || app_config->force_10bit) {
             config->stream.supportedVideoFormats |= VIDEO_FORMAT_AV1_MAIN10;
         }
     }

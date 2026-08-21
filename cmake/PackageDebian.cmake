@@ -17,7 +17,7 @@ else ()
     message(FATAL_ERROR "Unsupported target ${CMAKE_C_COMPILER_TARGET}")
 endif()
 
-set(CPACK_DEBIAN_PACKAGE_SUMMARY "Open Source NVIDIA GameStream Client")
+set(CPACK_DEBIAN_PACKAGE_SUMMARY "NVIDIA GameStream Client, for LG webOS TV")
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Mariotaku Lee <mariotaku.lee@gmail.com>")
 set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/mariotaku/moonlight-tv")
 set(CPACK_DEBIAN_PACKAGE_SECTION "games")

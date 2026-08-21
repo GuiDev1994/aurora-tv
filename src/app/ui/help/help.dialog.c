@@ -46,6 +46,7 @@ lv_obj_t *help_dialog_create(app_t *app) {
 
     lv_list_add_text(list, locstr("About"));
     if (app != NULL) {
+        add_about_line(list, locstr("Product"), locstr("NVIDIA GameStream Client, for LG webOS TV."));
         add_about_line(list, locstr("Version"), APP_VERSION);
         add_about_line(list, locstr("Video decoder"), module_id(app->ss4s.selection.video_module));
         add_about_line(list, locstr("Audio backend"), module_id(app->ss4s.selection.audio_module));

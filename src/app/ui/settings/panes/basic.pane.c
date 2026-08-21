@@ -27,6 +27,8 @@ typedef struct {
     lv_obj_t *bitrate_slider;
     lv_obj_t *hdr_checkbox;
     lv_obj_t *hdr_hint;
+    lv_obj_t *force_10bit_checkbox;
+    lv_obj_t *force_10bit_hint;
 
     pref_dropdown_string_entry_t *vdec_entries;
     int vdec_entries_len;
@@ -184,6 +186,11 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     lv_obj_set_height(pane->hdr_checkbox, LV_DPX(72));
     pane->hdr_hint = pref_desc_label(view, NULL, false);
     lv_obj_add_event_cb(pane->hdr_checkbox, hdr_state_update_cb, LV_EVENT_VALUE_CHANGED, pane);
+
+    pane->force_10bit_checkbox = pref_checkbox(view, locstr("10-bit SDR"), &app_configuration->force_10bit, false);
+    lv_obj_set_height(pane->force_10bit_checkbox, LV_DPX(72));
+    pane->force_10bit_hint = pref_desc_label(view, NULL, false);
+    lv_obj_add_event_cb(pane->force_10bit_checkbox, hdr_state_update_cb, LV_EVENT_VALUE_CHANGED, pane);
     hdr_state_update(pane);
 
     lv_obj_t *audio_row = pref_focus_row(view, locstr("Audio"));
@@ -215,7 +222,8 @@ static void hdr_state_update(basic_pane_t *pane) {
     app_t *app = pane->parent->app;
     const bool hevc_hdr = app_configuration->hevc && (app->ss4s.video_cap.codecs & SS4S_VIDEO_H265);
     const bool av1_hdr = app_configuration->av1 && (app->ss4s.video_cap.codecs & SS4S_VIDEO_AV1);
-    bool hdr_ok = (hevc_hdr || av1_hdr) && app->ss4s.video_cap.hdr;
+    const bool main10_codec = hevc_hdr || av1_hdr;
+    bool hdr_ok = main10_codec && app->ss4s.video_cap.hdr;
     if (hdr_ok) {
         lv_obj_clear_state(pane->hdr_checkbox, LV_STATE_DISABLED);
         lv_label_set_text(pane->hdr_hint, "");
@@ -228,6 +236,16 @@ static void hdr_state_update(basic_pane_t *pane) {
         } else {
             lv_label_set_text(pane->hdr_hint, locstr("HDR is not supported by the current decoder."));
         }
+    }
+    if (main10_codec) {
+        lv_obj_clear_state(pane->force_10bit_checkbox, LV_STATE_DISABLED);
+        lv_label_set_text(pane->force_10bit_hint,
+                          locstr("Negotiate Main10 without HDR for less banding in SDR."));
+        lv_obj_clear_flag(pane->force_10bit_hint, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_state(pane->force_10bit_checkbox, LV_STATE_DISABLED);
+        lv_obj_clear_flag(pane->force_10bit_hint, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(pane->force_10bit_hint, locstr("10-bit SDR requires HEVC or AV1."));
     }
 }
 

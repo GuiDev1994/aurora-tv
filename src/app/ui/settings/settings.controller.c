@@ -614,6 +614,11 @@ static void on_detail_key(lv_event_t *e) {
                 if (controller->suppress_item_activate) {
                     return;
                 }
+                if (controller->pane_mbox != NULL &&
+                    target == lv_msgbox_get_close_btn(controller->pane_mbox)) {
+                    settings_request_close_pane_popup(controller);
+                    return;
+                }
                 if (lv_obj_check_type(target, &lv_textarea_class)) {
                     lv_group_set_editing(nav_detail, true);
                     return;
@@ -626,6 +631,26 @@ static void on_detail_key(lv_event_t *e) {
                     settings_activate_focus_row(controller, target);
                     return;
                 }
+                return;
+            case LV_KEY_UP:
+                if (controller->active_dropdown) {
+                    lv_event_stop_bubbling(e);
+                    return;
+                }
+                if (lv_obj_check_type(target, &lv_textarea_class) && lv_group_get_editing(nav_detail)) {
+                    return;
+                }
+                lv_group_focus_prev(nav_detail);
+                return;
+            case LV_KEY_DOWN:
+                if (controller->active_dropdown) {
+                    lv_event_stop_bubbling(e);
+                    return;
+                }
+                if (lv_obj_check_type(target, &lv_textarea_class) && lv_group_get_editing(nav_detail)) {
+                    return;
+                }
+                lv_group_focus_next(nav_detail);
                 return;
             case LV_KEY_LEFT:
                 if (pref_obj_is_focus_row(target)) {

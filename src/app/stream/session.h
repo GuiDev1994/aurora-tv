@@ -68,6 +68,7 @@ typedef struct session_config_t {
     bool hardware_mouse;
     bool vmouse;
     uint8_t stick_deadzone;
+    bool report_gamepad_battery;
     bool auto_adjust_bitrate;
     int abr_mode;
 } session_config_t;

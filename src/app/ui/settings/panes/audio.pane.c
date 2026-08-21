@@ -104,7 +104,7 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     lv_obj_set_width(ch_dropdown, LV_PCT(100));
 #if TARGET_WEBOS
     pref_desc_label(view,
-                    locstr("5.1/7.1 use PulseAudio (SDL order). Video stays on SMP/NDL."),
+                    locstr("5.1 prefers Opus on NDL; PCM is used if Opus open fails (channel remap applied)."),
                     false);
 #endif
 

@@ -90,6 +90,12 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     pref_desc_label(view, locstr("Swap A/B and X/Y gamepad buttons. Useful when you prefer Nintendo-like layouts."),
                     false);
 
+    pref_header(view, locstr("Controller"));
+    pref_checkbox(view, locstr("Report battery to host"), &app_configuration->report_gamepad_battery, false);
+    pref_desc_label(view, locstr("Advertise battery state to Vibepollo/Sunshine so the host virtual pad "
+                                 "matches Xbox, DualSense, DS4, or Switch Pro capabilities from this TV."),
+                    false);
+
     pref_desc_label(view, locstr("Hold Select/Back for 4 seconds during streaming to pin or unpin performance stats. "
                                  "Open the on-screen keyboard from the stream overlay, Magic Remote BLUE, "
                                  "or gamepad Y while virtual mouse is active."),

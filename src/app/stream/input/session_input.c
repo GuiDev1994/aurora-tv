@@ -39,6 +39,7 @@ void session_input_init(stream_input_t *input, session_t *session, app_input_t *
     input->pointerGestureStartY = 0;
     input->view_only = config->view_only;
     input->stick_deadzone = config->stick_deadzone;
+    input->report_gamepad_battery = config->report_gamepad_battery;
     input->no_sdl_mouse = config->hardware_mouse;
 #if FEATURE_INPUT_EVMOUSE
     if (!config->view_only && config->hardware_mouse) {

@@ -36,6 +36,8 @@ typedef struct app_gamepad_state_t {
     app_gamepad_sensor_state_t accelState;
     app_gamepad_sensor_state_t gyroState;
 #endif
+    uint8_t lastBatteryState;
+    uint8_t lastBatteryPercentage;
 } app_gamepad_state_t;
 
 typedef struct app_input_t {
