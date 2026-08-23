@@ -94,19 +94,17 @@ DECODER_RENDERER_CALLBACKS ss4s_dec_callbacks = {
 void session_video_prepare_stream(void) {
     int caps = CAPABILITY_DIRECT_SUBMIT;
     const bool hevc = app_configuration != NULL && app_configuration->hevc;
+    unsigned slices = VDEC_STREAM_SLICES_MIN;
     if (hevc) {
-        caps |= CAPABILITY_REFERENCE_FRAME_INVALIDATION_HEVC;
-        unsigned slices = VDEC_STREAM_SLICES_MIN;
         if (app_configuration != NULL) {
             slices = vdec_slices_for_stream(app_configuration->stream.width,
                                             app_configuration->stream.height,
                                             app_configuration->stream.fps);
         }
-        caps |= CAPABILITY_SLICES_PER_FRAME(slices);
-        commons_log_info("Session", "Video SDP caps: RFI + %u slices/frame (HEVC=1)", slices);
-    } else {
-        commons_log_info("Session", "Video SDP caps: direct submit only (H.264)");
+        caps |= CAPABILITY_REFERENCE_FRAME_INVALIDATION_HEVC | CAPABILITY_SLICES_PER_FRAME(slices);
     }
+    commons_log_info("Session", "Video SDP caps: direct submit, %s, %u slices/frame",
+                     hevc ? "RFI" : "no RFI", slices);
     ss4s_dec_callbacks.capabilities = caps;
 }
 

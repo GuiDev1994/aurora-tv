@@ -18,6 +18,11 @@ typedef struct experimental_pane_t {
     lv_obj_t *idr_slider;
     lv_obj_t *idr_hint;
     int idr_refresh_slider_value;
+    lv_obj_t *abr_dropdown;
+    pref_dropdown_int_entry_t abr_entries[3];
+#if TARGET_WEBOS
+    pref_dropdown_int_entry_t queue_entries[4];
+#endif
 } experimental_pane_t;
 
 static void pane_ctor(lv_fragment_t *self, void *args);
@@ -25,6 +30,12 @@ static void pane_ctor(lv_fragment_t *self, void *args);
 static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container);
 
 static void on_show_logs_changed(lv_event_t *e);
+
+static void reconnect_cb(lv_event_t *e);
+
+static void abr_state_update(experimental_pane_t *pane);
+
+static void abr_checkbox_cb(lv_event_t *e);
 
 static void idr_refresh_state_update(experimental_pane_t *pane);
 
@@ -43,6 +54,15 @@ const lv_fragment_class_t settings_pane_experimental_cls = {
 static void pane_ctor(lv_fragment_t *self, void *args) {
     experimental_pane_t *pane = (experimental_pane_t *) self;
     pane->parent = args;
+    pane->abr_entries[0] = (pref_dropdown_int_entry_t) {locstr("Balanced"), 0, true};
+    pane->abr_entries[1] = (pref_dropdown_int_entry_t) {locstr("Quality"), 1, false};
+    pane->abr_entries[2] = (pref_dropdown_int_entry_t) {locstr("Low latency"), 2, false};
+#if TARGET_WEBOS
+    pane->queue_entries[0] = (pref_dropdown_int_entry_t) {locstr("Off (present on arrival)"), 0, true};
+    pane->queue_entries[1] = (pref_dropdown_int_entry_t) {locstr("V-Sync, 2 frames"), 2, false};
+    pane->queue_entries[2] = (pref_dropdown_int_entry_t) {locstr("V-Sync, 3 frames"), 3, false};
+    pane->queue_entries[3] = (pref_dropdown_int_entry_t) {locstr("V-Sync, 4 frames"), 4, false};
+#endif
 }
 
 static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
@@ -70,7 +90,30 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     }
 #endif
 
+#if TARGET_WEBOS
+    pref_header(view, locstr("Frame pacing"));
+
+    lv_obj_t *queue_dropdown = pref_dropdown_int(view, pane->queue_entries,
+                                                 sizeof(pane->queue_entries) / sizeof(pane->queue_entries[0]),
+                                                 &app_configuration->render_queue_frames, NULL);
+    lv_obj_set_width(queue_dropdown, LV_PCT(100));
+    pref_desc_label(view,
+                    locstr("Keep frames in the TV's render buffer so it releases them on its own "
+                           "V-Sync instead of the moment they arrive. Fixes judder in camera pans. "
+                           "Each frame adds one frame of latency."),
+                    false);
+    lv_obj_add_event_cb(queue_dropdown, reconnect_cb, LV_EVENT_VALUE_CHANGED, pane);
+#endif
+
     pref_header(view, locstr("Video"));
+
+    lv_obj_t *full_range = pref_checkbox(view, locstr("Full range YUV (SDR only)"),
+                                         &app_configuration->force_full_color_range, false);
+    pref_desc_label(view,
+                    locstr("Ask the host for full-range levels. Wrong for most TVs, which expect limited "
+                           "range — turn on only if SDR looks washed out."),
+                    false);
+    lv_obj_add_event_cb(full_range, reconnect_cb, LV_EVENT_VALUE_CHANGED, pane);
 
     lv_obj_t *idr_checkbox = lv_checkbox_create(view);
     lv_checkbox_set_text(idr_checkbox, locstr("Periodic decoder refresh (HEVC)"));
@@ -92,7 +135,56 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     lv_obj_add_event_cb(idr_slider, idr_refresh_slider_cb, LV_EVENT_VALUE_CHANGED, pane);
     idr_refresh_state_update(pane);
 
+#if TARGET_WEBOS
+    pref_header(view, locstr("Audio"));
+
+    lv_obj_t *pcm_checkbox = pref_checkbox(view, locstr("Decode 5.1 in the client (PCM)"),
+                                           &app_configuration->surround_pcm, false);
+    pref_desc_label(view,
+                    locstr("Skips the TV's Opus surround transcode, which costs CPU and can drop audio. "
+                           "Turn on only if 5.1 cuts out; channel order then relies on the client remap."),
+                    false);
+    lv_obj_add_event_cb(pcm_checkbox, reconnect_cb, LV_EVENT_VALUE_CHANGED, pane);
+#endif
+
+    pref_header(view, locstr("Bitrate"));
+
+    lv_obj_t *abr_checkbox = pref_checkbox(view, locstr("Adaptive bitrate"),
+                                           &app_configuration->auto_adjust_bitrate, false);
+    pane->abr_dropdown = pref_dropdown_int(view, pane->abr_entries,
+                                           sizeof(pane->abr_entries) / sizeof(pane->abr_entries[0]),
+                                           &app_configuration->abr_mode, NULL);
+    lv_obj_set_width(pane->abr_dropdown, LV_PCT(100));
+    pref_desc_label(view,
+                    locstr("Let the host lower the bitrate when the link drops packets, then ramp back up. "
+                           "Requires a Sunshine build with ABR support."),
+                    false);
+    lv_obj_add_event_cb(abr_checkbox, abr_checkbox_cb, LV_EVENT_VALUE_CHANGED, pane);
+    lv_obj_add_event_cb(pane->abr_dropdown, reconnect_cb, LV_EVENT_VALUE_CHANGED, pane);
+    abr_state_update(pane);
+
     return view;
+}
+
+static void reconnect_cb(lv_event_t *e) {
+    experimental_pane_t *pane = lv_event_get_user_data(e);
+    if (pane->parent) {
+        pane->parent->needs_stream_reconnect = true;
+    }
+}
+
+static void abr_state_update(experimental_pane_t *pane) {
+    if (app_configuration->auto_adjust_bitrate) {
+        lv_obj_clear_state(pane->abr_dropdown, LV_STATE_DISABLED);
+    } else {
+        lv_obj_add_state(pane->abr_dropdown, LV_STATE_DISABLED);
+    }
+}
+
+static void abr_checkbox_cb(lv_event_t *e) {
+    experimental_pane_t *pane = lv_event_get_user_data(e);
+    reconnect_cb(e);
+    abr_state_update(pane);
 }
 
 static void on_show_logs_changed(lv_event_t *e) {

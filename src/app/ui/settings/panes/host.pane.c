@@ -27,6 +27,8 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     lv_obj_set_flex_align(view, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     pref_checkbox(view, locstr("Optimize for streaming (SOPS)"), &app_configuration->sops, false);
     pref_checkbox(view, locstr("Mute PC while streaming"), &app_configuration->localaudio, true);
+    pref_checkbox(view, locstr("Quit the game when the stream ends"), &app_configuration->quitappafter, false);
+    pref_checkbox(view, locstr("Resume a running game automatically"), &app_configuration->autoresume, false);
     pref_checkbox(view, locstr("Stats overlay on start"), &app_configuration->show_stats_on_start, false);
     pref_checkbox(view, locstr("Compact stats"), &app_configuration->show_stats_compact, false);
 #if TARGET_WEBOS

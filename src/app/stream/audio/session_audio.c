@@ -8,6 +8,8 @@
 #include "stream/session_priv.h"
 #include "logging.h"
 #include "config.h"
+#include "app.h"
+#include "app_settings.h"
 
 #define SAMPLES_PER_FRAME  240
 
@@ -37,7 +39,19 @@ static int aud_init(int audioConfiguration, const POPUS_MULTISTREAM_CONFIGURATIO
             .sampleRate = opusConfig->sampleRate,
             .samplesPerFrame = SAMPLES_PER_FRAME,
     };
-    if (session->audio_cap.codecs & SS4S_AUDIO_OPUS && SS4S_GetAudioPreferredCodecs(&info) & SS4S_AUDIO_OPUS) {
+    if (opusConfig->channelCount == 6) {
+        commons_log_info("Session", "Opus 5.1 from host: streams=%d coupled=%d mapping=[%u,%u,%u,%u,%u,%u]",
+                         opusConfig->streams, opusConfig->coupledStreams,
+                         opusConfig->mapping[0], opusConfig->mapping[1], opusConfig->mapping[2],
+                         opusConfig->mapping[3], opusConfig->mapping[4], opusConfig->mapping[5]);
+    }
+    /* Escape hatch for backends that transcode surround Opus: decoding here is
+     * cheaper than the backend's decode+re-encode, at the cost of relying on
+     * the client-side channel remap. */
+    const bool force_pcm = app_configuration != NULL && app_configuration->surround_pcm &&
+                           opusConfig->channelCount > 2;
+    if (!force_pcm && session->audio_cap.codecs & SS4S_AUDIO_OPUS &&
+        SS4S_GetAudioPreferredCodecs(&info) & SS4S_AUDIO_OPUS) {
         codec = SS4S_AUDIO_OPUS;
         decoder = NULL;
         buffer = calloc(1024, sizeof(unsigned char));
@@ -157,5 +171,13 @@ AUDIO_RENDERER_CALLBACKS ss4s_aud_callbacks = {
         .init = aud_init,
         .cleanup = aud_cleanup,
         .decodeAndPlaySample = aud_feed,
+#if TARGET_WEBOS
+        /* No direct submit: the webOS backend may transcode surround Opus, and
+         * running that on the RTP receive thread stalls socket reads long enough
+         * to lose audio packets at 4K bitrates (#59, #66). Limelight's own
+         * decoder thread absorbs the cost. */
+        .capabilities = 0,
+#else
         .capabilities = CAPABILITY_DIRECT_SUBMIT,
+#endif
 };

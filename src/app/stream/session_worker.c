@@ -37,7 +37,20 @@ static void session_apply_decoder_env(const session_t *session) {
     unsetenv("SS4S_SMOOTH_PACING_MAX_DRIFT_FRAMES");
     unsetenv("SS4S_PANEL_PHASE_INTERVAL_US");
     setenv("SS4S_PAUSE_AT_DECODE_TIME", "1", 1);
-    commons_log_info("Session", "Stream pacing: wall-clock PTS (native 120Hz, no 144 VRR grid)");
+
+    /* NDL only presents on its own vsync if its render buffer actually holds frames,
+     * which requires giving it a PTS in the future. Passing "now" (the historic
+     * behaviour) keeps the buffer empty and pins presentation to arrival phase. */
+    const int queue_frames = app_configuration != NULL ? app_configuration->render_queue_frames : 0;
+    if (queue_frames > 0) {
+        char frames[8];
+        snprintf(frames, sizeof(frames), "%d", queue_frames);
+        setenv("SS4S_RENDER_QUEUE_TARGET", frames, 1);
+        commons_log_info("Session", "Stream pacing: V-Sync via render buffer, %d frames", queue_frames);
+    } else {
+        unsetenv("SS4S_RENDER_QUEUE_TARGET");
+        commons_log_info("Session", "Stream pacing: off, PTS = now (presents on arrival)");
+    }
     (void) session;
 #else
     (void) session;

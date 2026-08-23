@@ -167,6 +167,8 @@ void settings_initialize(app_settings_t *config, char *conf_dir) {
     config->hevc = true;
     config->av1 = false;
     config->idr_refresh_interval_ms = 0;
+    config->render_queue_frames = 0;
+    config->surround_pcm = false;
     config->show_stats_on_start = false;
     config->show_stats_compact = false;
     config->show_logs = false;
@@ -253,6 +255,7 @@ bool settings_save(app_settings_t *config) {
     ini_write_bool(fp, "hevc", config->hevc);
     ini_write_bool(fp, "av1", config->av1);
     ini_write_int(fp, "idr_refresh_interval_ms", config->idr_refresh_interval_ms);
+    ini_write_int(fp, "render_queue_frames", config->render_queue_frames);
     ini_write_bool(fp, "show_stats_on_start", config->show_stats_on_start);
     ini_write_bool(fp, "show_stats_compact", config->show_stats_compact);
     ini_write_bool(fp, "show_logs", config->show_logs);
@@ -266,6 +269,7 @@ bool settings_save(app_settings_t *config) {
         ini_write_string(fp, "device", config->audio_device);
     }
     ini_write_string(fp, "surround", serialize_audio_config(config->stream.audioConfiguration));
+    ini_write_bool(fp, "surround_pcm", config->surround_pcm);
 
     if (!config->fullscreen) {
         ini_write_section(fp, "window");
@@ -416,11 +420,19 @@ static int settings_parse(app_settings_t *config, const char *section, const cha
                INI_FULL_MATCH("video", "smooth_frame_pacing") ||
                INI_FULL_MATCH("video", "soft_recovery") ||
                INI_FULL_MATCH("video", "experimental_frame_pacer") ||
+               INI_FULL_MATCH("video", "vsync_pacing") ||
                INI_NAME_MATCH("stream_hud") ||
                INI_NAME_MATCH("high_priority_stream")) {
         /* Legacy keys ignored (removed from settings). */
     } else if (INI_FULL_MATCH("video", "force_full_color_range")) {
         config->force_full_color_range = INI_IS_TRUE(value);
+    } else if (INI_FULL_MATCH("video", "render_queue_frames")) {
+        set_int(&config->render_queue_frames, value);
+        if (config->render_queue_frames < 0 || config->render_queue_frames > 8) {
+            config->render_queue_frames = 0;
+        }
+    } else if (INI_FULL_MATCH("audio", "surround_pcm")) {
+        config->surround_pcm = INI_IS_TRUE(value);
     } else if (INI_NAME_MATCH("surround")) {
         config->stream.audioConfiguration = parse_audio_config(value);
     } else if (INI_NAME_MATCH("sops")) {

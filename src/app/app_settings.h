@@ -59,6 +59,14 @@ typedef struct app_settings_t {
     bool av1;
     /** Periodic HEVC IDR refresh interval in ms (0 = off, min 500 when enabled, step 500). */
     int idr_refresh_interval_ms;
+    /**
+     * webOS/NDL: how many frames to keep in the renderer's buffer by handing it a
+     * future PTS, so the TV releases frames on its own vsync instead of on arrival.
+     * 0 = off (present as soon as decoded). Each frame costs one frame of latency.
+     */
+    int render_queue_frames;
+    /** Decode surround Opus in the client and feed PCM, skipping backend transcode. */
+    bool surround_pcm;
     bool show_stats_on_start;
     bool show_stats_compact;
     /** On-screen log overlay preference (Yellow cycles Off/Live/Frozen). */
