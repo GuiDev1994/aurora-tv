@@ -180,8 +180,11 @@ void settings_initialize(app_settings_t *config, char *conf_dir) {
     config->game_mode = true;
 
 #if defined(TARGET_WEBOS)
-    /* Auto pairs audio with the video module (SMP/NDL). Both remaps 5.1 PCM for LFE. */
+    /* Auto pairs audio with the video module (SMP/NDL). */
     set_string(&config->audio_backend, "auto");
+    /* eARC Atmos on C5/G5: Opus 5.1 with a stub OpusHead clips; PCM + remap is
+     * the verified path. Stereo still works (surround_pcm only applies to >2ch). */
+    config->surround_pcm = true;
     settings_apply_ntsc_preset_refresh(config, config->stream.fps);
 #endif
 
@@ -189,6 +192,14 @@ void settings_initialize(app_settings_t *config, char *conf_dir) {
     config->ini_path = path_join(conf_dir, CONF_NAME_MOONLIGHT);
     config->condb_path = path_join(conf_dir, "gamecontrollerdb.txt");
     config->key_dir = path_join(conf_dir, "key");
+}
+
+void settings_restore_defaults(app_settings_t *config) {
+    char *conf_dir = config->conf_dir;
+    /* settings_initialize memset()s the struct; conf_dir is a parameter so it
+     * survives. Pairing keys live under key_dir on disk and are not wiped. */
+    settings_initialize(config, conf_dir);
+    settings_save(config);
 }
 
 bool settings_read(app_settings_t *config) {
@@ -427,10 +438,8 @@ static int settings_parse(app_settings_t *config, const char *section, const cha
     } else if (INI_FULL_MATCH("video", "force_full_color_range")) {
         config->force_full_color_range = INI_IS_TRUE(value);
     } else if (INI_FULL_MATCH("video", "render_queue_frames")) {
-        set_int(&config->render_queue_frames, value);
-        if (config->render_queue_frames < 0 || config->render_queue_frames > 8) {
-            config->render_queue_frames = 0;
-        }
+        /* Retired V-Sync queue: keep 0 so old ini files cannot re-enable it. */
+        config->render_queue_frames = 0;
     } else if (INI_FULL_MATCH("audio", "surround_pcm")) {
         config->surround_pcm = INI_IS_TRUE(value);
     } else if (INI_NAME_MATCH("surround")) {

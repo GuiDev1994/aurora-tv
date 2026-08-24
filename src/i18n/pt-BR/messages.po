@@ -840,6 +840,10 @@ msgstr ""
 "Desligado = pedidos imediatos (padrão). Use 1500–3000 ms para reduzir congestionamento "
 "no canal de controle e latência de input em presets agressivos do host."
 
+#: src/app/ui/settings/panes/basic.pane.c
+msgid "AV1 on this TV presents at 60 Hz even when the overlay shows 120. Use HEVC for 120 fps."
+msgstr "Nesta TV o AV1 apresenta a 60 Hz mesmo com o overlay a 120. Usa HEVC para 120 fps."
+
 #: src/app/ui/settings/panes/video.pane.c
 msgid "Use AV1 when possible"
 msgstr "Usar AV1 quando possível"

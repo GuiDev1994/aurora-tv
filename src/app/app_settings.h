@@ -60,9 +60,8 @@ typedef struct app_settings_t {
     /** Periodic HEVC IDR refresh interval in ms (0 = off, min 500 when enabled, step 500). */
     int idr_refresh_interval_ms;
     /**
-     * webOS/NDL: how many frames to keep in the renderer's buffer by handing it a
-     * future PTS, so the TV releases frames on its own vsync instead of on arrival.
-     * 0 = off (present as soon as decoded). Each frame costs one frame of latency.
+     * Retired. Future-PTS V-Sync made PAN hitch worse on C5. Always 0 (present
+     * on arrival). Old moonlight.ini keys are ignored.
      */
     int render_queue_frames;
     /** Decode surround Opus in the client and feed PCM, skipping backend transcode. */
@@ -122,6 +121,9 @@ extern const size_t audio_config_len;
 #define VDEC_REASSEMBLY_BUFFER_MB 2
 
 void settings_initialize(app_settings_t *config, char *conf_dir);
+
+/** Re-apply built-in defaults and rewrite moonlight.ini. Keeps pairing keys. */
+void settings_restore_defaults(app_settings_t *config);
 
 bool settings_read(app_settings_t *config);
 

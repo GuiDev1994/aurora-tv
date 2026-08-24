@@ -95,17 +95,30 @@ This line is the experiment's verdict:
   source frame rate is not the negotiated one.
 
 Cost is exactly the target depth in latency: 3 frames at 120 fps is 25 ms.
+If the log shows `queue avg ~0` / `starved ~100%`, NDL ignored the future PTS and
+V-Sync 2/3/4 frames will not change delay or pans. Aurora then falls back to PTS=now.
+
+At native 4K (3840×2160) NDL can queue decode faster than the 120 Hz panel drains,
+so latency grows. `NDL_DirectVideoSetFrameDropThreshold(1)` drops late frames instead
+of letting that backlog run away. Scaled 3.6K does not hit this path.
 
 ## 5.1 audio on webOS
 
-The host is left on its own channel order (`surroundParams` is not sent). NDL's Opus
+webOS asks the host for `surroundParams=642014523` (moonlight-tv / Sunshine #2424):
+6 channels, 4 streams, 2 coupled, mapping `[0,1,4,5,2,3]` = FL FR SL SR FC LFE.
+Do **not** omit that and remap only on the client — that is how Center/LFE went
+to the surrounds. PCM 5.1 (checkbox) still permutes WAVE → that same 6-channel
+order so Sub is last. Do not send a second Sunshine `surround-params`.
+
+NDL's Opus
 decoder only accepts mapping `[0,1,4,5,2,3]`; anything else makes the module decode
 and re-encode every 5 ms packet. Check which path is live:
 
 - `Opus 5.1 passthrough (no re-encode)` — ideal.
 - `Channel config is not supported, enabling re-encoding` — transcode active.
 
-The transcode runs at complexity 0 off the RTP receive thread. If 5.1 still drops,
-**Settings → Audio → Decode 5.1 in the client (PCM)** removes it entirely, at the
-cost of relying on the client remap to device order `E PD D PE C LFE`. Do not send
-`surroundParams=642014523` on top of that — it double-swaps channels (see PR #55).
+The transcode runs at complexity 0 off the RTP receive thread. If 5.1 still drops
+or an eARC Atmos soundbar clips, **Settings → Experimental → Decode 5.1 in the
+client (PCM)** skips the TV Opus decoder. PCM is remapped from WAVE to
+`E PD D PE C Sub` (C and LFE last; FR sits in the PD slot). Do not also set
+Sunshine `surround-params` a second time.

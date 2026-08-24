@@ -103,7 +103,7 @@ lv_obj_t *pref_pane_container(lv_obj_t *parent) {
     lv_obj_set_style_radius(view, 0, 0);
     lv_obj_set_style_border_opa(view, LV_OPA_TRANSP, 0);
     lv_obj_set_style_pad_all(view, 0, 0);
-    lv_obj_set_style_pad_row(view, LV_DPX(4), 0);
+    lv_obj_set_style_pad_row(view, LV_DPX(2), 0);
     return view;
 }
 
@@ -337,6 +337,9 @@ lv_obj_t *pref_desc_label(lv_obj_t *parent, const char *title, bool focusable) {
     lv_obj_set_width(label, LV_PCT(100));
     lv_obj_add_flag(label, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
     lv_obj_set_style_pad_left(label, LV_DPX(30), 0);
+    lv_obj_set_style_pad_top(label, 0, 0);
+    lv_obj_set_style_pad_bottom(label, LV_DPX(2), 0);
+    lv_obj_set_style_text_line_space(label, 0, 0);
     lv_obj_set_style_text_font(label, lv_theme_get_font_small(parent), 0);
     lv_obj_set_style_outline_opa(label, LV_OPA_50, LV_STATE_FOCUS_KEY);
     lv_obj_set_style_outline_color(label, ml_color_hex(ML_COLOR_FOCUS), LV_STATE_FOCUS_KEY);

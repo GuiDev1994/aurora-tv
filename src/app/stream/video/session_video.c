@@ -179,6 +179,10 @@ int vdec_delegate_setup(int videoFormat, int width, int height, int redrawRate, 
         case VIDEO_FORMAT_AV1_MAIN8:
         case VIDEO_FORMAT_AV1_MAIN10:
             info.codec = SS4S_VIDEO_AV1;
+            commons_log_info("Session",
+                              "AV1 path: %s %dx%d@%d (HEVC decoder/pacing/NDL feed unchanged)",
+                              video_format_name(videoFormat), width, height,
+                              vdec_stream_target_fps);
             break;
         default: {
             commons_log_error("Session", "Unsupported codec %s", vdec_stream_info.format);

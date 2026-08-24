@@ -103,6 +103,24 @@ New or experimental settings belong in `experimental.pane.c`.
 Retired INI keys are collected in a shared "legacy keys ignored" branch in
 `app_settings.c` so old config files don't warn — add to it rather than dropping the key.
 
+## 5.1 audio (C5 + eARC) — verified, do not invert
+
+Three conventions exist: GFE native, Moonlight WAVE (`FL FR C LFE RL RR`), and
+webOS NDL passthrough `{0,1,4,5,2,3}` (FL FR SL SR FC LFE packed as
+`surroundParams=642014523`).
+
+What is live on HEAD (LG C5, webOS 25, eARC Atmos bar, Windows 5.1 speaker test):
+
+| Path | What it does | Result |
+|------|----------------|--------|
+| `surroundParams=642014523` in `session_worker.c` | Host advertises the mapping `IsOpusPassthroughSupported()` already expects | Required. Nulling it (v1.2.0–1.2.3) forced `opus_fix` re-encode and wrong speakers. |
+| PCM Feed `SS4S_WebOS_RemapPcm51ToDevice` | WAVE → NDL 6ch `E, PD, D, PE, C, Sub` | E/C/D/PD/Sub verified on C5. PE is the correct speaker but quieter; digital boost (×2.5 wrap or +3 dB saturate) distorted — leave unity gain. |
+| `surround_pcm` (Experimental) | Decode Opus in-process, skip NDL Opus/MAT | Needed on this eARC bar (Opus stub header clips). Default on for webOS. |
+
+Do **not** send Sunshine `surround-params` a second time on top of `642014523`.
+Do **not** feed unpermuted CEA PCM (LFE at index 3) — Sub goes silent.
+Do not "fix" 5.1 by deleting `surroundParams` again.
+
 ## webOS frame pacing — read before attempting
 
 Pan microstutter on the C5 has resisted a long series of attempts. What is already
@@ -115,7 +133,10 @@ ruled out, so nobody repeats it:
 | Presentation offset (`SS4S_PRESENTATION_OFFSET_US`) | no change |
 | Panel-phase clock (`SS4S_PANEL_PHASE_PACING`) | no change |
 | Holding the Feed call on a frame grid ("V-Sync gate") | no change, removed |
-| Bitrate 270 → below 100 Mbps | no change |
+| Future PTS / render-buffer V-Sync (`render_queue_frames`) | no change on C5 (buffer stays empty; PTS ignored); option removed — made PAN hitch worse |
+| Clearing `CAPABILITY_DIRECT_SUBMIT` (decoder thread) | **worse**: decoded FPS 115–118 and real stutter; restore direct submit |
+| 4K 120 @ 270 Mbps | **accumulating delay** (USB2 + decode queue). 80 Mbps 4K is stable; 120 Mbps slight drift |
+| Bitrate 270 → below 100 Mbps (3.6K pan hitch) | no change |
 | 120 Hz vs 119.94 Hz | no change |
 
 Facts that matter and are easy to get wrong:
@@ -131,6 +152,16 @@ Facts that matter and are easy to get wrong:
   represent an 8.333 ms period at 120 fps exactly.
 - `NDL_DirectVideoGetRenderBufferLength` is the one real observable: if the renderer holds
   no frames it cannot align anything to vsync, and presentation phase just follows arrival.
+
+## AV1 120 Hz (C5 NDL) — verified, do not chase with PTS
+
+NDL feeds 120 AV1 frames/s (overlay FPS is submit rate). UFOTest 120 looks identical
+to 60, with stutter; HEVC 120 is clearly sharper. PTS-now, unique-ms, 8 ms future
+grid, no frame-drop threshold, and an AV1 feed thread did not change that.
+
+HEVC on the same NDL path ignores PTS and presents on arrival. AV1 honors the
+decoder clock and presents at 60 Hz. That is the TV AV1 DirectVideo path, not
+bitrate. Do not "fix" it by changing HEVC. For 120 fps, use HEVC.
 
 ## Submodule / dependency notes
 

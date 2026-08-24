@@ -78,16 +78,7 @@ static bool json_return_value_true(const char *json) {
     return ok;
 }
 
-static char *exec_root_luna(const char *method, const char *inner_body_json) {
-    char command[1400];
-    int n = snprintf(command, sizeof(command),
-                     "luna-send -n 1 luna://com.webos.settingsservice/%s '%s'",
-                     method, inner_body_json);
-    if (n < 0 || (size_t) n >= sizeof(command)) {
-        commons_log_error("GameMode", "luna-send command too long");
-        return NULL;
-    }
-
+static char *exec_root_cmd(const char *command) {
     jvalue_ref payload = jobject_create_var(
             jkeyval(J_CSTR_TO_JVAL("command"), jstring_create(command)),
             J_END_OBJ_DECL);
@@ -99,7 +90,7 @@ static char *exec_root_luna(const char *method, const char *inner_body_json) {
     bool called = HLunaServiceCallSync(URI_HBCHANNEL_EXEC, payload_str, true, &reply);
     j_release(&payload);
     if (!called || reply == NULL) {
-        commons_log_warn("GameMode", "hbchannel exec call failed for %s", method);
+        commons_log_warn("GameMode", "hbchannel exec call failed");
         free(reply);
         return NULL;
     }
@@ -124,7 +115,89 @@ static char *exec_root_luna(const char *method, const char *inner_body_json) {
     return stdout_s;
 }
 
+static char *exec_root_luna(const char *method, const char *inner_body_json) {
+    char command[1400];
+    int n = snprintf(command, sizeof(command),
+                     "luna-send -n 1 luna://com.webos.settingsservice/%s '%s'",
+                     method, inner_body_json);
+    if (n < 0 || (size_t) n >= sizeof(command)) {
+        commons_log_error("GameMode", "luna-send command too long");
+        return NULL;
+    }
+    return exec_root_cmd(command);
+}
+
+static char *parse_json_string_path(const char *json, const char *obj_key, const char *field) {
+    if (json == NULL) {
+        return NULL;
+    }
+    JSchemaInfo schema;
+    jschema_info_init(&schema, jschema_all(), NULL, NULL);
+    jdomparser_ref parser = jdomparser_create(&schema, 0);
+    char *result = NULL;
+    if (parser && jdomparser_feed(parser, json, (int) strlen(json)) && jdomparser_end(parser)) {
+        jvalue_ref root = jdomparser_get_result(parser);
+        jvalue_ref obj = jobject_get(root, j_cstr_to_buffer(obj_key));
+        if (jis_object(obj)) {
+            result = jstring_dup(jobject_get(obj, j_cstr_to_buffer(field)));
+        }
+    }
+    if (parser) {
+        jdomparser_release(&parser);
+    }
+    return result;
+}
+
+static char *get_config(const char *key) {
+    char payload[384];
+    snprintf(payload, sizeof(payload), "{\"configNames\":[\"%s\"]}", key);
+    char *reply = NULL;
+    if (HLunaServiceCallSync("luna://com.webos.service.config/getConfigs", payload, true, &reply) &&
+        reply != NULL && json_return_value_true(reply)) {
+        char *v = parse_json_string_path(reply, "configs", key);
+        free(reply);
+        if (v != NULL) {
+            return v;
+        }
+    }
+    free(reply);
+    char command[512];
+    snprintf(command, sizeof(command),
+             "luna-send -n 1 luna://com.webos.service.config/getConfigs '{\"configNames\":[\"%s\"]}'",
+             key);
+    char *out = exec_root_cmd(command);
+    char *v = parse_json_string_path(out, "configs", key);
+    free(out);
+    return v;
+}
+
+static bool set_config(const char *key, const char *value) {
+    char payload[384];
+    snprintf(payload, sizeof(payload), "{\"configs\":{\"%s\":\"%s\"}}", key, value);
+    char *reply = NULL;
+    if (HLunaServiceCallSync("luna://com.webos.service.config/setConfigs", payload, true, &reply) &&
+        reply != NULL && json_return_value_true(reply)) {
+        free(reply);
+        return true;
+    }
+    free(reply);
+    char command[512];
+    snprintf(command, sizeof(command),
+             "luna-send -n 1 luna://com.webos.service.config/setConfigs '{\"configs\":{\"%s\":\"%s\"}}'",
+             key, value);
+    char *out = exec_root_cmd(command);
+    bool ok = json_return_value_true(out);
+    if (!ok && out != NULL) {
+        commons_log_warn("GameMode", "setConfigs %s=%s: %s", key, value, out);
+    }
+    free(out);
+    return ok;
+}
+
 static char *get_setting(const char *category, const char *key) {
+    if (category != NULL && strcmp(category, "config") == 0) {
+        return get_config(key);
+    }
     char body[320];
     snprintf(body, sizeof(body),
              "{\"category\":\"%s\",\"keys\":[\"%s\"]}", category, key);
@@ -170,6 +243,9 @@ static bool set_setting_body(const char *body, bool log_fail) {
 }
 
 static bool set_setting(const char *category, const char *key, const char *value) {
+    if (category != NULL && strcmp(category, "config") == 0) {
+        return set_config(key, value);
+    }
     char body[384];
     /* webOS 10.3 (C5): pictureMode/soundMode reject current_app ("???") / DBTYPE.
      * truMotion-style keys often need current_app. Try global first, then app. */
@@ -272,6 +348,27 @@ webos_game_mode_state_t *webos_game_mode_enter(bool hdr) {
         commons_log_warn("GameMode", "no settings applied");
         free(state);
         return NULL;
+    }
+    return state;
+}
+
+webos_game_mode_state_t *webos_game_mode_lock_soc_hz(webos_game_mode_state_t *state, int hz) {
+    if (!webos_game_mode_is_rooted() || hz < 60 || hz > 120) {
+        return state;
+    }
+    if (state == NULL) {
+        state = calloc(1, sizeof(*state));
+        if (state == NULL) {
+            return NULL;
+        }
+    }
+    static const char *alts120[] = {"120Hz", "120"};
+    const char *vals60[] = {"60Hz", "60"};
+    const char *const *vals = (hz == 60) ? vals60 : alts120;
+    size_t nvals = 2;
+    if (apply_one_any(state, "config", "tv.hw.SoCOutputFrameRate", vals, nvals, true)) {
+        commons_log_info("GameMode", "SoC output locked to %s (avoid 144Hz pulldown vs 120 fps)",
+                         vals[0]);
     }
     return state;
 }

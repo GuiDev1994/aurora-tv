@@ -45,9 +45,9 @@ static int aud_init(int audioConfiguration, const POPUS_MULTISTREAM_CONFIGURATIO
                          opusConfig->mapping[0], opusConfig->mapping[1], opusConfig->mapping[2],
                          opusConfig->mapping[3], opusConfig->mapping[4], opusConfig->mapping[5]);
     }
-    /* Escape hatch for backends that transcode surround Opus: decoding here is
-     * cheaper than the backend's decode+re-encode, at the cost of relying on
-     * the client-side channel remap. */
+    /* Escape hatch for NDL Opus 5.1: decode here and Feed PCM. NDL's
+     * SS4S_WebOS_RemapPcm51ToDevice (ndl_audio.c) then maps WAVE to the C5
+     * 6-channel order E, PD, D, PE, C, Sub. Host still gets surroundParams. */
     const bool force_pcm = app_configuration != NULL && app_configuration->surround_pcm &&
                            opusConfig->channelCount > 2;
     if (!force_pcm && session->audio_cap.codecs & SS4S_AUDIO_OPUS &&

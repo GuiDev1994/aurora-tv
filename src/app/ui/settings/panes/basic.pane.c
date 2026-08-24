@@ -181,6 +181,7 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
         lv_obj_add_state(av1_checkbox, LV_STATE_DISABLED);
     }
     lv_obj_add_event_cb(av1_checkbox, hdr_state_update_cb, LV_EVENT_VALUE_CHANGED, pane);
+    pref_desc_label(view, locstr("AV1 on this TV presents at 60 Hz even when the overlay shows 120. Use HEVC for 120 fps."), false);
 
     pane->hdr_checkbox = pref_checkbox(view, locstr("HDR"), &app_configuration->hdr, false);
     lv_obj_set_height(pane->hdr_checkbox, LV_DPX(72));

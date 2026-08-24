@@ -4,6 +4,8 @@
 #include "ui/settings/settings.controller.h"
 #include "util/i18n.h"
 #include "util/log_overlay.h"
+#include "lvgl/util/lv_app_utils.h"
+#include "app_settings.h"
 
 #if TARGET_WEBOS
 #include "platform/webos/game_mode.h"
@@ -20,9 +22,6 @@ typedef struct experimental_pane_t {
     int idr_refresh_slider_value;
     lv_obj_t *abr_dropdown;
     pref_dropdown_int_entry_t abr_entries[3];
-#if TARGET_WEBOS
-    pref_dropdown_int_entry_t queue_entries[4];
-#endif
 } experimental_pane_t;
 
 static void pane_ctor(lv_fragment_t *self, void *args);
@@ -32,6 +31,10 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container);
 static void on_show_logs_changed(lv_event_t *e);
 
 static void reconnect_cb(lv_event_t *e);
+
+static void reset_defaults_clicked(lv_event_t *e);
+
+static void reset_defaults_confirm_cb(lv_event_t *e);
 
 static void abr_state_update(experimental_pane_t *pane);
 
@@ -57,12 +60,6 @@ static void pane_ctor(lv_fragment_t *self, void *args) {
     pane->abr_entries[0] = (pref_dropdown_int_entry_t) {locstr("Balanced"), 0, true};
     pane->abr_entries[1] = (pref_dropdown_int_entry_t) {locstr("Quality"), 1, false};
     pane->abr_entries[2] = (pref_dropdown_int_entry_t) {locstr("Low latency"), 2, false};
-#if TARGET_WEBOS
-    pane->queue_entries[0] = (pref_dropdown_int_entry_t) {locstr("Off (present on arrival)"), 0, true};
-    pane->queue_entries[1] = (pref_dropdown_int_entry_t) {locstr("V-Sync, 2 frames"), 2, false};
-    pane->queue_entries[2] = (pref_dropdown_int_entry_t) {locstr("V-Sync, 3 frames"), 3, false};
-    pane->queue_entries[3] = (pref_dropdown_int_entry_t) {locstr("V-Sync, 4 frames"), 4, false};
-#endif
 }
 
 static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
@@ -88,21 +85,6 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
                         locstr("Picture/sound Game for the stream (IGR on). Restored when it ends."),
                         false);
     }
-#endif
-
-#if TARGET_WEBOS
-    pref_header(view, locstr("Frame pacing"));
-
-    lv_obj_t *queue_dropdown = pref_dropdown_int(view, pane->queue_entries,
-                                                 sizeof(pane->queue_entries) / sizeof(pane->queue_entries[0]),
-                                                 &app_configuration->render_queue_frames, NULL);
-    lv_obj_set_width(queue_dropdown, LV_PCT(100));
-    pref_desc_label(view,
-                    locstr("Keep frames in the TV's render buffer so it releases them on its own "
-                           "V-Sync instead of the moment they arrive. Fixes judder in camera pans. "
-                           "Each frame adds one frame of latency."),
-                    false);
-    lv_obj_add_event_cb(queue_dropdown, reconnect_cb, LV_EVENT_VALUE_CHANGED, pane);
 #endif
 
     pref_header(view, locstr("Video"));
@@ -141,8 +123,8 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     lv_obj_t *pcm_checkbox = pref_checkbox(view, locstr("Decode 5.1 in the client (PCM)"),
                                            &app_configuration->surround_pcm, false);
     pref_desc_label(view,
-                    locstr("Skips the TV's Opus surround transcode, which costs CPU and can drop audio. "
-                           "Turn on only if 5.1 cuts out; channel order then relies on the client remap."),
+                    locstr("Decode 5.1 to PCM in the client (needed on eARC Atmos). Channel order is "
+                           "E, PD, D, PE, C, Sub. Leave off for stereo."),
                     false);
     lv_obj_add_event_cb(pcm_checkbox, reconnect_cb, LV_EVENT_VALUE_CHANGED, pane);
 #endif
@@ -163,6 +145,18 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     lv_obj_add_event_cb(pane->abr_dropdown, reconnect_cb, LV_EVENT_VALUE_CHANGED, pane);
     abr_state_update(pane);
 
+    pref_header(view, locstr("Reset"));
+    lv_obj_t *reset_btn = lv_btn_create(view);
+    lv_obj_set_width(reset_btn, LV_PCT(100));
+    lv_obj_t *reset_lbl = lv_label_create(reset_btn);
+    lv_label_set_text(reset_lbl, locstr("Reset all settings to defaults"));
+    lv_obj_center(reset_lbl);
+    pref_desc_label(view,
+                    locstr("Restores built-in defaults and rewrites moonlight.ini. Pairing keys are kept. "
+                           "Reconnect the stream after this."),
+                    false);
+    lv_obj_add_event_cb(reset_btn, reset_defaults_clicked, LV_EVENT_CLICKED, pane);
+
     return view;
 }
 
@@ -171,6 +165,30 @@ static void reconnect_cb(lv_event_t *e) {
     if (pane->parent) {
         pane->parent->needs_stream_reconnect = true;
     }
+}
+
+static void reset_defaults_clicked(lv_event_t *e) {
+    static const char *btns[] = {translatable("Cancel"), translatable("Reset"), ""};
+    lv_obj_t *mbox = lv_msgbox_create_i18n(NULL, locstr("Reset settings"),
+                                           locstr("Restore all settings to defaults? Pairing is kept. "
+                                                  "You must reconnect the stream."),
+                                           btns, false);
+    lv_obj_center(mbox);
+    lv_obj_add_event_cb(mbox, reset_defaults_confirm_cb, LV_EVENT_VALUE_CHANGED,
+                        lv_event_get_user_data(e));
+}
+
+static void reset_defaults_confirm_cb(lv_event_t *e) {
+    experimental_pane_t *pane = lv_event_get_user_data(e);
+    lv_obj_t *mbox = lv_event_get_current_target(e);
+    if (lv_msgbox_get_active_btn(mbox) == 1 && app_configuration != NULL) {
+        settings_restore_defaults(app_configuration);
+        if (pane->parent) {
+            pane->parent->needs_stream_reconnect = true;
+        }
+        log_overlay_set_enabled(app_configuration->show_logs);
+    }
+    lv_msgbox_close_async(mbox);
 }
 
 static void abr_state_update(experimental_pane_t *pane) {

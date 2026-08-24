@@ -32,6 +32,25 @@ static bool ui_modal_consumes_input(void) {
     return streaming_soft_keyboard_shown();
 }
 
+/** Magic Remote often emits KEY + GAMEPAD for one press. Swallow the second
+ *  press of the same LVGL key within this window so input mode does not flap. */
+#define NAV_DUP_MS 50
+
+static bool swallow_duplicate_nav_press(uint32_t key, bool pressed) {
+    static uint32_t last_ticks;
+    static uint32_t last_key;
+    if (!pressed || key == 0) {
+        return false;
+    }
+    uint32_t now = SDL_GetTicks();
+    if (key == last_key && (now - last_ticks) < NAV_DUP_MS) {
+        return true;
+    }
+    last_key = key;
+    last_ticks = now;
+    return false;
+}
+
 static bool read_keyboard(app_ui_input_t *input, const SDL_KeyboardEvent *event, lv_drv_sdl_key_t *state);
 
 static bool read_event(const SDL_Event *event, lv_drv_sdl_key_t *state);
@@ -166,10 +185,12 @@ static void sdl_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
         if (!nav_to_lvgl && !back_closes_kbd && app->session != NULL && session_handle_input_event(app->session, &e)) {
             state->state = LV_INDEV_STATE_RELEASED;
         } else if (!nav_to_lvgl && !back_closes_kbd && !ui_modal_consumes_input()) {
-            /* Avoid switching input mode while soft keyboard is open – the remote can send both
-             * key and gamepad events for the same press, causing KEY ↔ GAMEPAD oscillation. */
             if (read_keyboard(input, &e.key, state)) {
-                ui_set_input_mode(input, UI_INPUT_MODE_KEY);
+                if (swallow_duplicate_nav_press(state->key, state->state == LV_INDEV_STATE_PRESSED)) {
+                    state->state = LV_INDEV_STATE_RELEASED;
+                } else {
+                    ui_set_input_mode(input, UI_INPUT_MODE_KEY);
+                }
             }
         } else if (nav_to_lvgl) {
             ui_set_input_mode(input, UI_INPUT_MODE_KEY);
@@ -277,7 +298,11 @@ static void sdl_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
             /* Avoid switching input mode while soft keyboard is open – prevents KEY ↔ GAMEPAD
              * loop when remote sends both key and gamepad events for combos like Alt+Q. */
             if (read_event(&e, state)) {
-                ui_set_input_mode(input, UI_INPUT_MODE_GAMEPAD);
+                if (swallow_duplicate_nav_press(state->key, state->state == LV_INDEV_STATE_PRESSED)) {
+                    state->state = LV_INDEV_STATE_RELEASED;
+                } else {
+                    ui_set_input_mode(input, UI_INPUT_MODE_GAMEPAD);
+                }
             }
         } else if (handled_modal) {
             ui_set_input_mode(input, UI_INPUT_MODE_GAMEPAD);

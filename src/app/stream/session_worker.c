@@ -36,21 +36,15 @@ static void session_apply_decoder_env(const session_t *session) {
     unsetenv("SS4S_NDL_PACING_INTERVAL_US");
     unsetenv("SS4S_SMOOTH_PACING_MAX_DRIFT_FRAMES");
     unsetenv("SS4S_PANEL_PHASE_INTERVAL_US");
-    setenv("SS4S_PAUSE_AT_DECODE_TIME", "1", 1);
+    /* pauseAtDecodeTime on NDL/SMP has never been shown to help PAN hitch, and
+     * on 4K it can hold decoded frames instead of presenting them (latency grows). */
+    setenv("SS4S_PAUSE_AT_DECODE_TIME", "0", 1);
 
-    /* NDL only presents on its own vsync if its render buffer actually holds frames,
-     * which requires giving it a PTS in the future. Passing "now" (the historic
-     * behaviour) keeps the buffer empty and pins presentation to arrival phase. */
-    const int queue_frames = app_configuration != NULL ? app_configuration->render_queue_frames : 0;
-    if (queue_frames > 0) {
-        char frames[8];
-        snprintf(frames, sizeof(frames), "%d", queue_frames);
-        setenv("SS4S_RENDER_QUEUE_TARGET", frames, 1);
-        commons_log_info("Session", "Stream pacing: V-Sync via render buffer, %d frames", queue_frames);
-    } else {
-        unsetenv("SS4S_RENDER_QUEUE_TARGET");
-        commons_log_info("Session", "Stream pacing: off, PTS = now (presents on arrival)");
-    }
+    /* Future-PTS "V-Sync" made PAN hitch worse (2–4 frames of delay, buffer still
+     * empty on C5). Present on arrival. Pan hitch is a 1–2 frame skip with
+     * decoded FPS still 120 — not vsync offset. */
+    unsetenv("SS4S_RENDER_QUEUE_TARGET");
+    commons_log_info("Session", "Stream pacing: PTS = now (presents on arrival)");
     (void) session;
 #else
     (void) session;
@@ -96,9 +90,18 @@ int session_worker(session_t *session) {
                          session->config.stream.fps, session->config.stream.bitrate);
     }
     GS_CLIENT client = app_gs_client_new(app);
-    /* Host keeps SDL/Vorbis channel order. webOS SMP/NDL remaps PCM to device
-     * order in Feed (SS4S_WebOS_RemapPcm51ToDevice). Do not send surroundParams. */
+    /* moonlight-tv + Sunshine PR #2424: webOS NDL Opus only accepts 6ch / 4
+     * streams / 2 coupled with mapping [0,1,4,5,2,3] (FL FR SL SR FC LFE).
+     * That is surroundParams=642014523. Without it the host sends WAVE order
+     * and NDL places Center/LFE on the surrounds. Do not also send a second
+     * permute via Sunshine config. */
     const char *surround_params = NULL;
+#if TARGET_WEBOS
+    if (session->config.stream.audioConfiguration == AUDIO_CONFIGURATION_51_SURROUND) {
+        surround_params = "642014523";
+        commons_log_info("Session", "webOS 5.1 surroundParams=642014523 (FL FR SL SR FC LFE)");
+    }
+#endif
     short gamepad_mask = app_input_gamepads_mask(&app->input);
     int ret = gs_start_app(client, server, &session->config.stream, appId, server->isGfe, session->config.sops,
                            session->config.local_audio, gamepad_mask, surround_params);
@@ -131,6 +134,11 @@ int session_worker(session_t *session) {
         const bool hdr = session->app->settings.hdr &&
                          (session->config.stream.supportedVideoFormats & VIDEO_FORMAT_MASK_10BIT) != 0;
         game_mode_state = webos_game_mode_enter(hdr);
+        session->webos_game_mode = game_mode_state;
+    }
+    /* 144 Hz SoC + 120 fps stream = 5:6 pulldown (PAN hitch, decoded stays 120, no FD). */
+    if (session->config.stream.fps >= 100 && session->config.stream.fps <= 120) {
+        game_mode_state = webos_game_mode_lock_soc_hz(game_mode_state, 120);
         session->webos_game_mode = game_mode_state;
     }
 #endif
