@@ -35,6 +35,15 @@ const i18n_entry_t *i18n_entry(const char *locale) {
     if (!locale) return NULL;
     char locale_tmp[16];
     strncpy(locale_tmp, locale, sizeof(locale_tmp) - 1);
+    locale_tmp[sizeof(locale_tmp) - 1] = '\0';
+    char *dot = strchr(locale_tmp, '.');
+    if (dot) {
+        *dot = '\0';
+    }
+    char *at = strchr(locale_tmp, '@');
+    if (at) {
+        *at = '\0';
+    }
     char *current_pos = strchr(locale_tmp, '_');
     while (current_pos) {
         *current_pos = '-';
@@ -48,6 +57,15 @@ const i18n_entry_t *i18n_entry(const char *locale) {
             }
         } else if (strncasecmp(locale_tmp, item_loc, 2) == 0) {
             return &i18n_locales[i];
+        }
+    }
+    /* TV/SDL often reports language-only "pt". Map it onto pt-BR (or es-ES, …). */
+    if (strlen(locale_tmp) >= 2) {
+        for (int i = 0; i18n_locales[i].locale; i++) {
+            const char *item_loc = i18n_locales[i].locale;
+            if (strchr(item_loc, '-') && strncasecmp(locale_tmp, item_loc, 2) == 0) {
+                return &i18n_locales[i];
+            }
         }
     }
     return NULL;

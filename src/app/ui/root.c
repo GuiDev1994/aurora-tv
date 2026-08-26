@@ -139,8 +139,16 @@ void app_ui_close(app_ui_t *ui) {
     lv_disp_remove(ui->disp);
     lv_app_disp_drv_deinit(driver);
     ui->disp = NULL;
+#ifdef TARGET_WEBOS
+    /* Keep the native window. Destroying it makes SAM treat the app as gone
+     * and Home covers the NDL video plane (stream looks like it "closed"). */
+    if (ui->window != NULL) {
+        SDL_ShowWindow(ui->window);
+    }
+#else
     SDL_DestroyWindow(ui->window);
     ui->window = NULL;
+#endif
 }
 
 bool app_ui_is_opened(const app_ui_t *ui) {
@@ -166,17 +174,6 @@ bool ui_dispatch_userevent(app_t *app, int which, void *data1, void *data2) {
     if (!handled) {
         switch (which) {
             case USER_STREAM_OPEN: {
-#ifdef TARGET_WEBOS
-                /* Display stabilization: webOS compositor may need time to switch to
-                 * 120Hz. Multiple pump+delay cycles help avoid intermittent <60fps
-                 * on first app launch (user sometimes needs to restart app 2-3x). */
-                if (app_configuration->stream.fps >= 90) {
-                    for (int i = 0; i < 5; i++) {
-                        SDL_PumpEvents();
-                        SDL_Delay(30);  /* ~150ms - compositor settle before first frame */
-                    }
-                }
-#endif
                 if (app->ss4s.video_cap.transform & SS4S_VIDEO_CAP_TRANSFORM_UI_EXCLUSIVE) {
                     SDL_ShowCursor(SDL_FALSE);
                 } else {

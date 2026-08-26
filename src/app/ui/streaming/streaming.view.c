@@ -1,6 +1,8 @@
 #include "streaming.controller.h"
 #include "app.h"
 
+#include <string.h>
+
 #include "util/i18n.h"
 #include "util/font.h"
 #include "util/log_overlay.h"
@@ -12,6 +14,12 @@
 static lv_obj_t *stat_label(lv_obj_t *parent, const char *title);
 
 static lv_obj_t *overlay_title(lv_obj_t *parent, const char *title, streaming_controller_t *controller);
+
+static lv_obj_t *gfn_metric_box(lv_obj_t *parent, const char *unit, const char *caption);
+
+static lv_obj_t *gfn_section_title(lv_obj_t *parent, const char *title);
+
+static lv_obj_t *gfn_kv_row(lv_obj_t *parent, const char *key);
 
 lv_obj_t *streaming_scene_create(lv_fragment_t *self, lv_obj_t *parent) {
     streaming_controller_t *controller = (streaming_controller_t *) self;
@@ -37,7 +45,8 @@ lv_obj_t *streaming_scene_create(lv_fragment_t *self, lv_obj_t *parent) {
     lv_obj_clear_flag(overlay, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(overlay, LV_PCT(100), LV_PCT(100));
 
-    int stats_w = app_configuration->show_stats_compact ? 0 : LV_DPX(384);
+    /* GFN-style panel sits over the video (left). Don't shrink the video pane. */
+    int stats_w = 0;
     lv_disp_t *disp = lv_disp_get_default();
     int video_w = lv_disp_get_hor_res(disp) - LV_DPX(20) * 2 - (stats_w ? LV_DPX(30) + stats_w : 0);
     int video_h_pct = video_w * 100 / lv_disp_get_hor_res(disp);
@@ -169,36 +178,50 @@ lv_obj_t *streaming_scene_create(lv_fragment_t *self, lv_obj_t *parent) {
         lv_img_set_src(stat_pin_content, MAT_SYMBOL_PUSH_PIN);
         controller->stats_pin = stats_pin;
 
-        controller->stats_items.decoder = NULL;
-        controller->stats_items.audio = NULL;
-        controller->stats_items.rtt = NULL;
-        controller->stats_items.net_fps = NULL;
-        controller->stats_items.render_fps = NULL;
-        controller->stats_items.drop_rate = NULL;
-        controller->stats_items.bitrate = NULL;
-        controller->stats_items.host_latency = NULL;
-        controller->stats_items.vdec_latency = NULL;
-        controller->stats_items.render_queue = NULL;
-        controller->stats_items.cpu_ram = NULL;
+        memset(&controller->stats_items, 0, sizeof(controller->stats_items));
     } else {
-        lv_obj_set_size(stats, LV_DPX(384), LV_SIZE_CONTENT);
-        lv_obj_set_flex_flow(stats, LV_FLEX_FLOW_ROW_WRAP);
-        lv_obj_set_style_pad_bottom(stats, LV_DPX(10), 0);
-        lv_obj_align(stats, LV_ALIGN_TOP_RIGHT, -LV_DPX(20), LV_DPX(20));
-        overlay_title(stats, locstr("Performance"), controller);
+        lv_obj_set_width(stats, LV_DPX(280));
+        lv_obj_set_height(stats, LV_SIZE_CONTENT);
+        lv_obj_set_flex_flow(stats, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_style_pad_bottom(stats, LV_DPX(6), 0);
+        lv_obj_set_style_pad_gap(stats, LV_DPX(2), 0);
+        lv_obj_set_style_radius(stats, LV_DPX(6), 0);
+        lv_obj_align(stats, LV_ALIGN_TOP_RIGHT, -LV_DPX(12), LV_DPX(12));
+        controller->stats_items.header = overlay_title(stats, locstr("Performance"), controller);
+        lv_obj_set_flex_grow(controller->stats_items.header, 0);
         controller->stats_compact_label = NULL;
         controller->stats_quality_indicator = NULL;
-        controller->stats_items.decoder = stat_label(stats, "Video");
-        controller->stats_items.cpu_ram = stat_label(stats, "CPU / RAM");
-        controller->stats_items.audio = stat_label(stats, "Audio");
-        controller->stats_items.rtt = stat_label(stats, "Network RTT");
-        controller->stats_items.net_fps = NULL;
-        controller->stats_items.render_fps = stat_label(stats, "Decoded framerate");
-        controller->stats_items.drop_rate = stat_label(stats, "Network frame drop");
-        controller->stats_items.bitrate = stat_label(stats, "Bitrate");
-        controller->stats_items.host_latency = stat_label(stats, "Host processing latency");
-        controller->stats_items.vdec_latency = stat_label(stats, "Decoder latency");
-        controller->stats_items.render_queue = NULL;
+
+        lv_obj_t *metrics = lv_obj_create(stats);
+        lv_obj_remove_style_all(metrics);
+        lv_obj_set_width(metrics, LV_PCT(100));
+        lv_obj_set_height(metrics, LV_SIZE_CONTENT);
+        lv_obj_set_flex_flow(metrics, LV_FLEX_FLOW_ROW);
+        lv_obj_set_style_pad_hor(metrics, LV_DPX(6), 0);
+        lv_obj_set_style_pad_gap(metrics, LV_DPX(4), 0);
+        controller->stats_items.game_fps = gfn_metric_box(metrics, locstr("FPS"), locstr("Game"));
+        controller->stats_items.total_ms = gfn_metric_box(metrics, "ms", locstr("Latency"));
+        controller->stats_items.ping = gfn_metric_box(metrics, "ms", locstr("Ping"));
+
+        gfn_section_title(stats, locstr("Network"));
+        controller->stats_items.frame_loss = gfn_kv_row(stats, locstr("Frame loss"));
+        controller->stats_items.bandwidth = gfn_kv_row(stats, locstr("Bandwidth"));
+
+        lv_obj_t *divider = lv_obj_create(stats);
+        lv_obj_remove_style_all(divider);
+        lv_obj_set_size(divider, LV_PCT(100), LV_DPX(1));
+        lv_obj_set_style_bg_color(divider, lv_color_white(), 0);
+        lv_obj_set_style_bg_opa(divider, LV_OPA_20, 0);
+        lv_obj_set_style_pad_ver(divider, LV_DPX(4), 0);
+
+        gfn_section_title(stats, locstr("Stream"));
+        controller->stats_items.resolution = gfn_kv_row(stats, locstr("Resolution"));
+        controller->stats_items.codec = gfn_kv_row(stats, locstr("Video"));
+        controller->stats_items.decoder = gfn_kv_row(stats, locstr("Video backend"));
+        controller->stats_items.host_latency = gfn_kv_row(stats, locstr("Host processing latency"));
+        controller->stats_items.vdec_latency = gfn_kv_row(stats, locstr("Decoder latency"));
+        controller->stats_items.cpu_ram = gfn_kv_row(stats, locstr("CPU / RAM"));
+        controller->stats_items.audio = gfn_kv_row(stats, locstr("Audio"));
     }
 
 
@@ -250,11 +273,56 @@ void streaming_overlay_resized(streaming_controller_t *controller) {
     lv_obj_update_layout(controller->overlay);
 }
 
+static lv_obj_t *gfn_metric_box(lv_obj_t *parent, const char *unit, const char *caption) {
+    lv_obj_t *box = lv_obj_create(parent);
+    lv_obj_remove_style_all(box);
+    lv_obj_set_flex_grow(box, 1);
+    lv_obj_set_height(box, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(box, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_bg_color(box, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(box, LV_OPA_10, 0);
+    lv_obj_set_style_radius(box, LV_DPX(4), 0);
+    lv_obj_set_style_pad_ver(box, LV_DPX(4), 0);
+    lv_obj_set_style_pad_hor(box, LV_DPX(2), 0);
+    lv_obj_set_style_pad_gap(box, LV_DPX(0), 0);
+
+    lv_obj_t *value = lv_label_create(box);
+    lv_label_set_text(value, "-");
+    lv_obj_set_style_text_font(value, lv_theme_get_font_normal(box), 0);
+    lv_obj_set_style_text_color(value, lv_color_white(), 0);
+
+    lv_obj_t *unit_lbl = lv_label_create(box);
+    lv_label_set_text_fmt(unit_lbl, "(%s)", unit);
+    lv_obj_set_style_text_font(unit_lbl, lv_theme_get_font_small(box), 0);
+    lv_obj_set_style_text_opa(unit_lbl, LV_OPA_70, 0);
+
+    lv_obj_t *cap = lv_label_create(box);
+    lv_label_set_text(cap, caption);
+    lv_obj_set_style_text_font(cap, lv_theme_get_font_small(box), 0);
+    lv_obj_set_style_text_opa(cap, LV_OPA_80, 0);
+    return value;
+}
+
+static lv_obj_t *gfn_section_title(lv_obj_t *parent, const char *title) {
+    lv_obj_t *label = lv_label_create(parent);
+    lv_label_set_text(label, title);
+    lv_obj_set_width(label, LV_PCT(100));
+    lv_obj_set_style_pad_hor(label, LV_DPX(8), 0);
+    lv_obj_set_style_pad_top(label, LV_DPX(2), 0);
+    lv_obj_set_style_text_font(label, lv_theme_get_font_small(label), 0);
+    return label;
+}
+
+static lv_obj_t *gfn_kv_row(lv_obj_t *parent, const char *key) {
+    return stat_label(parent, key);
+}
+
 static lv_obj_t *stat_label(lv_obj_t *parent, const char *title) {
     lv_obj_t *container = lv_obj_create(parent);
     lv_obj_remove_style_all(container);
     lv_obj_set_size(container, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_hor(container, LV_DPX(15), 0);
+    lv_obj_set_style_pad_hor(container, LV_DPX(8), 0);
     lv_obj_set_flex_flow(container, LV_FLEX_FLOW_ROW);
     lv_obj_set_style_flex_main_place(container, LV_FLEX_ALIGN_SPACE_BETWEEN, 0);
     lv_obj_t *label = lv_label_create(container);
@@ -269,11 +337,11 @@ static lv_obj_t *overlay_title(lv_obj_t *parent, const char *title, streaming_co
     lv_obj_t *stats_title = lv_label_create(parent);
     lv_label_set_text_static(stats_title, title);
     lv_obj_set_width(stats_title, LV_PCT(100));
-    lv_obj_set_flex_grow(stats_title, 1);
+    lv_obj_set_flex_grow(stats_title, 0);
     lv_obj_set_style_bg_opa(stats_title, LV_OPA_20, 0);
     lv_obj_set_style_bg_color(stats_title, lv_color_black(), 0);
-    lv_obj_set_style_pad_hor(stats_title, LV_DPX(15), 0);
-    lv_obj_set_style_pad_ver(stats_title, LV_DPX(10), 0);
+    lv_obj_set_style_pad_hor(stats_title, LV_DPX(8), 0);
+    lv_obj_set_style_pad_ver(stats_title, LV_DPX(4), 0);
     lv_obj_t *stats_pin = lv_btn_create(stats_title);
     lv_group_remove_obj(stats_pin);
     lv_obj_add_flag(stats_pin, LV_OBJ_FLAG_CHECKABLE);

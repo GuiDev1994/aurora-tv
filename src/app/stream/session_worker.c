@@ -22,34 +22,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-static void session_apply_decoder_env(const session_t *session) {
 #if TARGET_WEBOS
-    /* C5 native compositor is 120Hz. SDL_webOSGetRefreshRate often returns 144
-     * (HDMI VRR max). Snapping PTS to 144Hz on a 120Hz plane is 5:6 pulldown —
-     * pan hitch at every FPS. Wall-clock PTS tested best on-device for PAN. */
-    setenv("SS4S_SMOOTH_PACING", "0", 1);
-    setenv("SS4S_NDL_SMOOTH_PACING", "0", 1);
-    setenv("SS4S_PANEL_PHASE_PACING", "0", 1);
-    unsetenv("SS4S_SMOOTH_PACING_HOST_ONLY");
-    unsetenv("SS4S_PRESENTATION_OFFSET_US");
-    unsetenv("SS4S_SMOOTH_PACING_INTERVAL_US");
-    unsetenv("SS4S_NDL_PACING_INTERVAL_US");
-    unsetenv("SS4S_SMOOTH_PACING_MAX_DRIFT_FRAMES");
-    unsetenv("SS4S_PANEL_PHASE_INTERVAL_US");
-    /* pauseAtDecodeTime on NDL/SMP has never been shown to help PAN hitch, and
-     * on 4K it can hold decoded frames instead of presenting them (latency grows). */
-    setenv("SS4S_PAUSE_AT_DECODE_TIME", "0", 1);
-
-    /* Future-PTS "V-Sync" made PAN hitch worse (2–4 frames of delay, buffer still
-     * empty on C5). Present on arrival. Pan hitch is a 1–2 frame skip with
-     * decoded FPS still 120 — not vsync offset. */
-    unsetenv("SS4S_RENDER_QUEUE_TARGET");
-    commons_log_info("Session", "Stream pacing: PTS = now (presents on arrival)");
-    (void) session;
-#else
-    (void) session;
+/* Installer greps this string out of the ELF. */
+static const char aurora_build_tag[] __attribute__((used)) = "aurora-v124-nopacing";
 #endif
-}
 
 int session_worker(session_t *session) {
     app_t *app = session->app;
@@ -126,21 +102,16 @@ int session_worker(session_t *session) {
     SS4S_PlayerSetViewportSize(session->player, app->ui.width, app->ui.height);
     SS4S_PlayerSetUserdata(session->player, app);
 
-    session_apply_decoder_env(session);
     session_video_prepare_stream();
 
 #if TARGET_WEBOS
-    if (session->app->settings.game_mode) {
-        const bool hdr = session->app->settings.hdr &&
-                         (session->config.stream.supportedVideoFormats & VIDEO_FORMAT_MASK_10BIT) != 0;
-        game_mode_state = webos_game_mode_enter(hdr);
-        session->webos_game_mode = game_mode_state;
-    }
-    /* 144 Hz SoC + 120 fps stream = 5:6 pulldown (PAN hitch, decoded stays 120, no FD). */
-    if (session->config.stream.fps >= 100 && session->config.stream.fps <= 120) {
-        game_mode_state = webos_game_mode_lock_soc_hz(game_mode_state, 120);
-        session->webos_game_mode = game_mode_state;
-    }
+    /* Force-off experimental SS4S pacing. Enabling it (the default in some
+     * modules) caused pan hitch; these setenv calls disable it, they do not
+     * add a new pacer. */
+    setenv("SS4S_SMOOTH_PACING", "0", 1);
+    setenv("SS4S_NDL_SMOOTH_PACING", "0", 1);
+    setenv("SS4S_PANEL_PHASE_PACING", "0", 1);
+    setenv("SS4S_PAUSE_AT_DECODE_TIME", "0", 1);
 #endif
 
     int startResult = LiStartConnection(&server->serverInfo, &session->config.stream,
@@ -172,6 +143,16 @@ int session_worker(session_t *session) {
         commons_log_error("Session", "Failed to start connection: Limelight returned %d", startResult);
         goto thread_cleanup;
     }
+#if TARGET_WEBOS
+    /* After the decoder is up: changing picture mode before LiStartConnection
+     * can tear down NDL and make the session exit immediately. */
+    if (session->app->settings.game_mode) {
+        const bool hdr = session->app->settings.hdr &&
+                         (session->config.stream.supportedVideoFormats & VIDEO_FORMAT_MASK_10BIT) != 0;
+        game_mode_state = webos_game_mode_enter(hdr);
+        session->webos_game_mode = game_mode_state;
+    }
+#endif
     session_set_state(session, STREAMING_STREAMING);
     bus_pushevent(USER_STREAM_OPEN, NULL, NULL);
     if (session->config.auto_adjust_bitrate) {

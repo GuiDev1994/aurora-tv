@@ -352,27 +352,6 @@ webos_game_mode_state_t *webos_game_mode_enter(bool hdr) {
     return state;
 }
 
-webos_game_mode_state_t *webos_game_mode_lock_soc_hz(webos_game_mode_state_t *state, int hz) {
-    if (!webos_game_mode_is_rooted() || hz < 60 || hz > 120) {
-        return state;
-    }
-    if (state == NULL) {
-        state = calloc(1, sizeof(*state));
-        if (state == NULL) {
-            return NULL;
-        }
-    }
-    static const char *alts120[] = {"120Hz", "120"};
-    const char *vals60[] = {"60Hz", "60"};
-    const char *const *vals = (hz == 60) ? vals60 : alts120;
-    size_t nvals = 2;
-    if (apply_one_any(state, "config", "tv.hw.SoCOutputFrameRate", vals, nvals, true)) {
-        commons_log_info("GameMode", "SoC output locked to %s (avoid 144Hz pulldown vs 120 fps)",
-                         vals[0]);
-    }
-    return state;
-}
-
 void webos_game_mode_on_hdr(webos_game_mode_state_t *state, bool hdr) {
     if (state == NULL || !hdr) {
         return;

@@ -301,13 +301,44 @@ bool streaming_refresh_stats() {
 
     const char *hdr_str = app_configuration->hdr ? "HDR" : "SDR";
     const char *codec = streaming_codec_display(vdec_stream_info.format);
-    if (info->width > 0 && info->height > 0) {
-        lv_label_set_text_fmt(controller->stats_items.decoder, "%d\u00d7%d %s %s (%s)", info->width, info->height, hdr_str,
-                              codec, SS4S_ModuleInfoGetId(app->ss4s.selection.video_module));
-    } else {
-        lv_label_set_text_fmt(controller->stats_items.decoder, "%s %s (%s)", codec, hdr_str,
-                              SS4S_ModuleInfoGetId(app->ss4s.selection.video_module));
+    const char *vdec_id = SS4S_ModuleInfoGetId(app->ss4s.selection.video_module);
+    const char *adec_id = SS4S_ModuleInfoGetId(app->ss4s.selection.audio_module);
+
+    float hostMs = 0.0f;
+    float submitMs = 0.0f;
+    float decOnlyMs = 0.0f;
+    if (dst->submittedFrames) {
+        submitMs = (float) dst->totalSubmitTime / (float) dst->submittedFrames;
+        if (vdec_stream_info.has_host_latency) {
+            hostMs = (float) dst->totalCaptureLatency / (float) dst->submittedFrames / 10.0f;
+        }
+        if (vdec_stream_info.has_decoder_latency) {
+            decOnlyMs = dst->avgDecoderLatency;
+        }
     }
+    float totalMs = (float) dst->rtt + hostMs + submitMs + decOnlyMs;
+    lv_label_set_text_fmt(controller->stats_items.game_fps, "%.1f", dst->decodedFps);
+    lv_label_set_text_fmt(controller->stats_items.total_ms, "%.1f", totalMs);
+    lv_label_set_text_fmt(controller->stats_items.ping, "%u", (unsigned) dst->rtt);
+
+    float loss_pct = (dst->totalFrames > 0)
+        ? (float) dst->networkDroppedFrames / (float) dst->totalFrames * 100.0f
+        : 0.0f;
+    lv_label_set_text_fmt(controller->stats_items.frame_loss, "%.2f%% (%u %s)",
+                          loss_pct, (unsigned) dst->networkDroppedFrames, locstr("total"));
+    lv_label_set_text_fmt(controller->stats_items.bandwidth, "%.3f Mbps",
+                          (float) dst->currentBitrateKbps / 1000000.0f);
+
+    float stream_hz = dst->decodedFps > 0.05f ? dst->decodedFps : (float) app_configuration->stream.fps;
+    if (info->width > 0 && info->height > 0) {
+        lv_label_set_text_fmt(controller->stats_items.resolution, "%d x %d @ %.1f",
+                              info->width, info->height, stream_hz);
+    } else {
+        lv_label_set_text(controller->stats_items.resolution, "-");
+    }
+    lv_label_set_text_fmt(controller->stats_items.codec, "%s %s", codec, hdr_str);
+    lv_label_set_text(controller->stats_items.decoder, vdec_id ? vdec_id : "-");
+
     if (controller->stats_items.cpu_ram != NULL) {
         if (sys_cpu_pct >= 0 && sys_ram_total_mb > 0) {
             lv_label_set_text_fmt(controller->stats_items.cpu_ram, "%d%% · %u/%uM",
@@ -320,32 +351,25 @@ bool streaming_refresh_stats() {
         }
     }
     lv_label_set_text_fmt(controller->stats_items.audio, "%s, %s (%s)", audio_stream_info.format,
-                          audio_stream_info.channels, SS4S_ModuleInfoGetId(app->ss4s.selection.audio_module));
-    lv_label_set_text_fmt(controller->stats_items.rtt, "%u/%u ms", (unsigned) dst->rtt, (unsigned) dst->rttVariance);
-    lv_label_set_text_fmt(controller->stats_items.render_fps, "%.2f FPS", dst->decodedFps);
-    lv_label_set_text_fmt(controller->stats_items.bitrate, "%.1f Mbps",
-                          (float) dst->currentBitrateKbps / 1000000.0f);
+                          audio_stream_info.channels, adec_id ? adec_id : "-");
 
-        if (dst->submittedFrames) {
-            lv_label_set_text_fmt(controller->stats_items.drop_rate, "%.2f%%",
-                                  (float) dst->networkDroppedFrames / (float) dst->totalFrames * 100);
-            if (vdec_stream_info.has_host_latency) {
-                float avgCapLatency = (float) dst->totalCaptureLatency / (float) dst->submittedFrames / 10.0f;
-                lv_label_set_text_fmt(controller->stats_items.host_latency, "avg %.2f ms", avgCapLatency);
-            } else {
-                lv_label_set_text_fmt(controller->stats_items.host_latency, "not available");
-            }
-            if (vdec_stream_info.has_decoder_latency) {
-                float avgSubmitTime = (float) dst->totalSubmitTime / (float) dst->submittedFrames;
-                lv_label_set_text_fmt(controller->stats_items.vdec_latency, "submit %.2f ms + decode %.2f ms",
-                                      avgSubmitTime, dst->avgDecoderLatency);
-            } else {
-                lv_label_set_text_fmt(controller->stats_items.vdec_latency, "not available");
-            }
+    if (dst->submittedFrames) {
+        if (vdec_stream_info.has_host_latency) {
+            float avgCapLatency = (float) dst->totalCaptureLatency / (float) dst->submittedFrames / 10.0f;
+            lv_label_set_text_fmt(controller->stats_items.host_latency, "%.2f ms", avgCapLatency);
+        } else {
+            lv_label_set_text(controller->stats_items.host_latency, locstr("not available"));
+        }
+        if (vdec_stream_info.has_decoder_latency) {
+            float avgSubmitTime = (float) dst->totalSubmitTime / (float) dst->submittedFrames;
+            lv_label_set_text_fmt(controller->stats_items.vdec_latency, "%.2f + %.2f ms",
+                                  avgSubmitTime, dst->avgDecoderLatency);
+        } else {
+            lv_label_set_text(controller->stats_items.vdec_latency, locstr("not available"));
+        }
     } else {
-        lv_label_set_text(controller->stats_items.drop_rate, "-");
-        lv_label_set_text_fmt(controller->stats_items.host_latency, "-");
-        lv_label_set_text_fmt(controller->stats_items.vdec_latency, "-");
+        lv_label_set_text(controller->stats_items.host_latency, "-");
+        lv_label_set_text(controller->stats_items.vdec_latency, "-");
     }
 
     return true;
@@ -727,7 +751,7 @@ static void streaming_set_stats_pinned(streaming_controller_t *controller, bool 
         if (app_configuration->show_stats_compact) {
             lv_obj_align(stats, LV_ALIGN_TOP_LEFT, 0, 0);
         } else {
-            lv_obj_align(stats, LV_ALIGN_TOP_RIGHT, -LV_DPX(20), LV_DPX(20));
+            lv_obj_align(stats, LV_ALIGN_TOP_RIGHT, -LV_DPX(12), LV_DPX(12));
         }
         lv_obj_add_state(stats, LV_STATE_USER_1);
         lv_obj_add_state(controller->stats_pin, LV_STATE_CHECKED);

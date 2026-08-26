@@ -494,19 +494,11 @@ static bool read_webos_key(app_ui_input_t *input, const SDL_KeyboardEvent *event
 }
 
 static void webos_key_input_mode(app_ui_input_t *input, const SDL_KeyboardEvent *event) {
-    switch (event->keysym.sym) {
-        case SDLK_UP:
-        case SDLK_DOWN:
-        case SDLK_LEFT:
-        case SDLK_RIGHT: {
-            if (!SDL_IsScreenKeyboardShown(input->ui->window)) {
-                SDL_webOSCursorVisibility(SDL_FALSE);
-            }
-            break;
-        }
-        default:
-            break;
-    }
+    (void) input;
+    (void) event;
+    /* Do not call SDL_webOSCursorVisibility. The backport SDL we compile against
+     * disagrees with the TV's libSDL2; calling it aborts (splash never leaves).
+     * Cursor auto-hide is SDL_HINT_WEBOS_CURSOR_SLEEP_TIME. */
 }
 
 #else

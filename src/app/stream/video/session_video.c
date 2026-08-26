@@ -158,8 +158,8 @@ int vdec_delegate_setup(int videoFormat, int width, int height, int redrawRate, 
     memset(&info, 0, sizeof(info));
     info.width = width;
     info.height = height;
-    /* Prefer host fractional refresh (e.g. 11988/100) for Starfish maxFrameRate / smooth
-     * pacing so the decoder grid matches NTSC clientRefreshRateX100 when set. */
+    /* When NTSC fractional refresh is set, pass it as num/den so Starfish
+     * advertises the same rate as clientRefreshRateX100. */
     if (session != NULL && session->config.stream.clientRefreshRateX100 > 0 &&
         (session->config.stream.clientRefreshRateX100 % 100) != 0) {
         info.frameRateNumerator = session->config.stream.clientRefreshRateX100;
@@ -334,10 +334,7 @@ int vdec_delegate_submit(PDECODE_UNIT decodeUnit) {
     if (decodeUnit->frameType == FRAME_TYPE_IDR) {
         flags |= SS4S_VIDEO_FEED_DATA_KEYFRAME;
     }
-    const int64_t pts_us = decodeUnit->presentationTimeUs > 0
-                                   ? (int64_t) decodeUnit->presentationTimeUs
-                                   : (int64_t) -1;
-    SS4S_VideoFeedResult result = SS4S_PlayerVideoFeedWithPTS(player, buffer, length, flags, pts_us);
+    SS4S_VideoFeedResult result = SS4S_PlayerVideoFeed(player, buffer, length, flags);
     return vdec_finish_feed(result, decodeUnit);
 }
 

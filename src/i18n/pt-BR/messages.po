@@ -885,3 +885,39 @@ msgstr ""
 "Opcional. Deixe vazio para o padrão. Enviado ao host como taxa x100 para frame pacing "
 "(ex.: 119.94 no modo jogo com VRR). Reconecte o stream após alterar."
 
+msgid "FPS"
+msgstr "FPS"
+
+msgid "Game"
+msgstr "Jogo"
+
+msgid "Stream"
+msgstr "Stream"
+
+msgid "Ping"
+msgstr "Ping"
+
+msgid "Latency"
+msgstr "Latência"
+
+msgid "Network"
+msgstr "Rede"
+
+msgid "Frame loss"
+msgstr "Perda de frames"
+
+msgid "Bandwidth"
+msgstr "Largura de banda"
+
+msgid "Resolution"
+msgstr "Resolução"
+
+msgid "Video backend"
+msgstr "Decoder de vídeo"
+
+msgid "total"
+msgstr "total"
+
+msgid "not available"
+msgstr "indisponível"
+

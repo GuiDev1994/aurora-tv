@@ -328,7 +328,8 @@ void session_config_init(app_t *app, session_config_t *config, const SERVER_DATA
             config->stream.supportedVideoFormats |= VIDEO_FORMAT_H265_MAIN10;
         }
     }
-    if (app_config->av1 && video_cap.codecs & SS4S_VIDEO_AV1) {
+    /* NDL AV1 presents at 60 Hz even when 120 is requested. HEVC is required above 60. */
+    if (app_config->av1 && video_cap.codecs & SS4S_VIDEO_AV1 && app_config->stream.fps <= 60) {
         config->stream.supportedVideoFormats |= VIDEO_FORMAT_AV1_MAIN8;
         if ((app_config->hdr && video_cap.hdr) || app_config->force_10bit) {
             config->stream.supportedVideoFormats |= VIDEO_FORMAT_AV1_MAIN10;

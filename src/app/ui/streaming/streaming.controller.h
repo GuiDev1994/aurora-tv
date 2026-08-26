@@ -21,17 +21,19 @@ typedef struct {
     lv_obj_t *suspend_btn, *quit_btn;
     lv_obj_t *stats;
     struct {
+        lv_obj_t *header;
+        lv_obj_t *game_fps;
+        lv_obj_t *total_ms;
+        lv_obj_t *ping;
+        lv_obj_t *frame_loss;
+        lv_obj_t *bandwidth;
+        lv_obj_t *resolution;
+        lv_obj_t *codec;
         lv_obj_t *decoder;
-        lv_obj_t *audio;
-        lv_obj_t *rtt;
-        lv_obj_t *net_fps;
-        lv_obj_t *render_fps;
-        lv_obj_t *drop_rate;
-        lv_obj_t *bitrate;
         lv_obj_t *host_latency;
         lv_obj_t *vdec_latency;
-        lv_obj_t *render_queue;
         lv_obj_t *cpu_ram;
+        lv_obj_t *audio;
     } stats_items;
     lv_obj_t *stats_compact_label;  /* Single-line stats when show_stats_compact */
     lv_obj_t *stats_quality_indicator;  /* Colored dot: green/yellow/red by latency */
