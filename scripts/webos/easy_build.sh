@@ -51,8 +51,8 @@ if [ -x "${_webos_gxx}" ]; then
   BUILD_OPTIONS="${BUILD_OPTIONS} -DCMAKE_CXX_COMPILER=${_webos_gxx}"
 fi
 
-# shellcheck disable=SC2068,SC2086
-$CMAKE_BIN -B"${CMAKE_BINARY_DIR}" -DCMAKE_TOOLCHAIN_FILE="${TOOLCHAIN_FILE}" $BUILD_OPTIONS $@ || exit 1
+# shellcheck disable=SC2086
+$CMAKE_BIN -B"${CMAKE_BINARY_DIR}" -DCMAKE_TOOLCHAIN_FILE="${TOOLCHAIN_FILE}" $BUILD_OPTIONS "$@" || exit 1
 
 if command -v nproc &>/dev/null; then
   CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)
