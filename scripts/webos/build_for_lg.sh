@@ -88,7 +88,16 @@ fi
 echo ""
 echo "Running build..."
 export TOOLCHAIN_FILE
-./scripts/webos/easy_build.sh -DCMAKE_BUILD_TYPE="${BUILD_TYPE}"
+EXTRA_CMAKE_ARGS=()
+if [ -n "${WEBOS_APPINFO_ID:-}" ]; then
+    echo "  WEBOS_APPINFO_ID = ${WEBOS_APPINFO_ID}"
+    EXTRA_CMAKE_ARGS+=("-DWEBOS_APPINFO_ID=${WEBOS_APPINFO_ID}")
+fi
+if [ -n "${WEBOS_APPINFO_TITLE:-}" ]; then
+    echo "  WEBOS_APPINFO_TITLE = ${WEBOS_APPINFO_TITLE}"
+    EXTRA_CMAKE_ARGS+=("-DWEBOS_APPINFO_TITLE=${WEBOS_APPINFO_TITLE}")
+fi
+./scripts/webos/easy_build.sh -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" "${EXTRA_CMAKE_ARGS[@]}"
 
 echo ""
 echo "=== Build complete! ==="
