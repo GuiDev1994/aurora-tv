@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdbool.h>
+
 #include <SDL_haptic.h>
 #include <SDL_joystick.h>
 #include <SDL_version.h>
@@ -35,6 +37,9 @@ typedef struct app_gamepad_state_t {
 #if !SDL_VERSION_ATLEAST(2, 0, 9)
     SDL_Haptic *haptic;
     int haptic_effect_id;
+#else
+    bool rumble_requested;
+    bool rumble_failed;
 #endif
 #if SDL_VERSION_ATLEAST(2, 0, 14)
     app_gamepad_sensor_state_t accelState;
