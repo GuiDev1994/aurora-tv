@@ -16,7 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define KBD_CLICK_DEDUPE_MS 80
+/* Artemis FullKeyboard holds the key for the whole press; match that. */
 #define KBD_BTN_W(w) (LV_BTNMATRIX_CTRL_POPOVER | (w))
 
 #define KBD_KEY_BG      0x2C2C2C
@@ -42,8 +42,11 @@ typedef struct {
     keyboard_modifier_state_t mods;
     kbd_layer_t layer;
     bool upper_case;
-    uint16_t last_click_btn_id;
-    uint32_t last_click_tick;
+    /* Key held while the button is pressed (Artemis-style press/release). */
+    bool key_held;
+    uint16_t held_btn_id;
+    short held_vk;
+    bool held_with_shift;
     void (*on_close)(void *);
     void *on_close_userdata;
 } soft_kbd_t;
@@ -239,7 +242,9 @@ static void kbd_apply_controls(soft_kbd_t *kbd) {
     size_t ctrl_count = 0;
     const lv_btnmatrix_ctrl_t *ctrl_map = kbd_ctrl_map(kbd->layer, &ctrl_count);
     lv_btnmatrix_set_ctrl_map(btnm, ctrl_map);
-    lv_btnmatrix_set_btn_ctrl_all(btnm, LV_BTNMATRIX_CTRL_CLICK_TRIG | LV_BTNMATRIX_CTRL_NO_REPEAT);
+    /* No CLICK_TRIG: VALUE_CHANGED on press is unused; we drive keys from
+     * PRESSED/RELEASED so Home/F-keys stay down for the whole touch (Artemis). */
+    lv_btnmatrix_set_btn_ctrl_all(btnm, LV_BTNMATRIX_CTRL_NO_REPEAT);
     for (size_t i = 0; i < ctrl_count; i++) {
         if (ctrl_map[i] & LV_BTNMATRIX_CTRL_POPOVER) {
             lv_btnmatrix_set_btn_ctrl(btnm, (uint16_t) i, LV_BTNMATRIX_CTRL_POPOVER);
@@ -311,74 +316,61 @@ static bool kbd_sym_needs_shift(soft_kbd_t *kbd, uint16_t btn_id) {
     return false;
 }
 
-static void on_keyboard_click(lv_event_t *e) {
-    kbd_data_t *kd = lv_event_get_user_data(e);
-    uint32_t *btn_id_ptr = lv_event_get_param(e);
-    uint16_t btn_id = (btn_id_ptr != NULL) ? (uint16_t) *btn_id_ptr
-                                           : lv_btnmatrix_get_selected_btn(lv_event_get_target(e));
-    if (btn_id == LV_BTNMATRIX_BTN_NONE) {
-        return;
-    }
-    if (btn_id >= (uint16_t) kd->vk_count) {
-        return;
-    }
-
-    soft_kbd_t *kbd = kd->kbd;
-    short vk = kd->vks[btn_id];
-    uint32_t now = lv_tick_get();
-    if (btn_id == kbd->last_click_btn_id && (now - kbd->last_click_tick) < KBD_CLICK_DEDUPE_MS) {
-        return;
-    }
-    kbd->last_click_btn_id = btn_id;
-    kbd->last_click_tick = now;
-
+static bool kbd_handle_meta_button(soft_kbd_t *kbd, kbd_data_t *kd, uint16_t btn_id, short vk) {
     if (btn_id == BTN_LAYER) {
         kbd_toggle_layer(kbd, kd);
-        return;
+        return true;
     }
     if ((kbd->layer == KBD_LAYER_SYMBOLS || kbd->layer == KBD_LAYER_SYMBOLS2) && btn_id == BTN_SYM_PAGE) {
         kbd->layer = (kbd->layer == KBD_LAYER_SYMBOLS) ? KBD_LAYER_SYMBOLS2 : KBD_LAYER_SYMBOLS;
         kbd_bind_vks(kd, kbd->layer);
         kbd_refresh_map(kbd);
-        return;
+        return true;
     }
     if (vk == 0) {
-        return;
+        return true;
     }
-
     if (vk == VK_SHIFT) {
         kbd->mods.shift = !kbd->mods.shift;
         keyboard_input_send_modifier(kbd->input, VK_SHIFT, kbd->mods.shift);
         kbd->upper_case = kbd->mods.shift;
         kbd_refresh_map(kbd);
-        return;
+        return true;
     }
     if (vk == VK_LCONTROL || vk == VK_RCONTROL) {
         kbd->mods.ctrl = !kbd->mods.ctrl;
         keyboard_input_send_modifier(kbd->input, VK_LCONTROL, kbd->mods.ctrl);
         kbd_update_modifier_visuals(kbd);
-        return;
+        return true;
     }
     if (vk == VK_LMENU || vk == VK_RMENU) {
         kbd->mods.alt = !kbd->mods.alt;
         keyboard_input_send_modifier(kbd->input, VK_LMENU, kbd->mods.alt);
         kbd_update_modifier_visuals(kbd);
-        return;
+        return true;
     }
     if ((vk == VK_LWIN || vk == VK_RWIN) && app_configuration->syskey_capture) {
         kbd->mods.win = !kbd->mods.win;
         keyboard_input_send_modifier(kbd->input, VK_LWIN, kbd->mods.win);
         kbd_update_modifier_visuals(kbd);
+        return true;
+    }
+    return false;
+}
+
+static void kbd_release_held_key(soft_kbd_t *kbd) {
+    if (!kbd->key_held) {
         return;
     }
-
-    if (kbd_sym_needs_shift(kbd, btn_id)) {
-        kbd_send_key_shift(kbd, vk, true);
-        kbd_send_key_shift(kbd, vk, false);
+    if (kbd->held_with_shift) {
+        kbd_send_key_shift(kbd, kbd->held_vk, false);
     } else {
-        kbd_send_key(kbd, vk, true);
-        kbd_send_key(kbd, vk, false);
+        kbd_send_key(kbd, kbd->held_vk, false);
     }
+    kbd->key_held = false;
+    kbd->held_btn_id = LV_BTNMATRIX_BTN_NONE;
+    kbd->held_vk = 0;
+    kbd->held_with_shift = false;
     keyboard_input_release_toggles(kbd->input, &kbd->mods, app_configuration->syskey_capture);
     if (kbd->layer == KBD_LAYER_ALPHA) {
         kbd->upper_case = kbd->mods.shift;
@@ -389,9 +381,43 @@ static void on_keyboard_click(lv_event_t *e) {
     }
 }
 
+static void on_keyboard_pressed(lv_event_t *e) {
+    kbd_data_t *kd = lv_event_get_user_data(e);
+    soft_kbd_t *kbd = kd->kbd;
+    uint16_t btn_id = lv_btnmatrix_get_selected_btn(lv_event_get_target(e));
+    if (btn_id == LV_BTNMATRIX_BTN_NONE || btn_id >= (uint16_t) kd->vk_count) {
+        return;
+    }
+    if (kbd->key_held) {
+        kbd_release_held_key(kbd);
+    }
+
+    short vk = kd->vks[btn_id];
+    if (kbd_handle_meta_button(kbd, kd, btn_id, vk)) {
+        return;
+    }
+
+    bool with_shift = kbd_sym_needs_shift(kbd, btn_id);
+    if (with_shift) {
+        kbd_send_key_shift(kbd, vk, true);
+    } else {
+        kbd_send_key(kbd, vk, true);
+    }
+    kbd->key_held = true;
+    kbd->held_btn_id = btn_id;
+    kbd->held_vk = vk;
+    kbd->held_with_shift = with_shift;
+}
+
+static void on_keyboard_released(lv_event_t *e) {
+    kbd_data_t *kd = lv_event_get_user_data(e);
+    kbd_release_held_key(kd->kbd);
+}
+
 static void kbd_data_delete_cb(lv_event_t *e) {
     kbd_data_t *kd = lv_event_get_user_data(e);
     if (kd && kd->kbd) {
+        kbd_release_held_key(kd->kbd);
         kd->kbd->kd = NULL;
     }
     free(kd);
@@ -403,6 +429,7 @@ static void container_delete_cb(lv_event_t *e) {
         if (g_active_kbd == kbd) {
             g_active_kbd = NULL;
         }
+        kbd_release_held_key(kbd);
         kbd->btnm = NULL;
         kbd_force_release(kbd);
         stream_input_flush_pressed_keys(kbd->input);
@@ -561,7 +588,9 @@ lv_obj_t *soft_keyboard_create(lv_obj_t *parent, session_t *session,
     kbd_apply_theme(btnm);
     kbd_apply_controls(kbd);
 
-    lv_obj_add_event_cb(btnm, on_keyboard_click, LV_EVENT_VALUE_CHANGED, kd);
+    lv_obj_add_event_cb(btnm, on_keyboard_pressed, LV_EVENT_PRESSED, kd);
+    lv_obj_add_event_cb(btnm, on_keyboard_released, LV_EVENT_RELEASED, kd);
+    lv_obj_add_event_cb(btnm, on_keyboard_released, LV_EVENT_PRESS_LOST, kd);
     lv_obj_add_event_cb(btnm, kbd_data_delete_cb, LV_EVENT_DELETE, kd);
     lv_group_focus_obj(btnm);
     lv_obj_add_event_cb(cont, container_delete_cb, LV_EVENT_DELETE, kbd);

@@ -9,6 +9,10 @@
 #include "lvgl.h"
 #include "lvgl/input/lv_drv_sdl_key.h"
 
+#if TARGET_WEBOS
+#include "platform/webos/dualsense_usb.h"
+#endif
+
 typedef struct app_t app_t;
 
 typedef struct app_gamepad_sensor_state_t {
@@ -42,6 +46,10 @@ typedef struct app_gamepad_state_t {
 #endif
     uint8_t lastBatteryState;
     uint8_t lastBatteryPercentage;
+#if TARGET_WEBOS
+    /** Wired DualSense hidraw feedback; NULL when BT or open failed. */
+    dualsense_usb_t *ds_usb;
+#endif
 } app_gamepad_state_t;
 
 typedef struct app_input_t {

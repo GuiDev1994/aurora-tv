@@ -70,6 +70,12 @@ typedef struct app_settings_t {
     bool hevc;
     /** Sunshine/Apollo: negotiate AV1 Main8/Main10 when decoder exposes SS4S_VIDEO_AV1. */
     bool av1;
+    /**
+     * When true (HEVC only), advertise CAPABILITY_SLICES_PER_FRAME (4–8) so the host can
+     * slice while encoding. Client still reassembles one whole AU before NDL Feed.
+     * Off by default — multi-slice bitstreams are device-dependent on webOS NDL.
+     */
+    bool hevc_sliced_frames;
     /** Periodic HEVC IDR refresh interval in ms (0 = off, min 500 when enabled, step 500). */
     int idr_refresh_interval_ms;
     /**

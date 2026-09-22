@@ -538,10 +538,20 @@ static void on_view_created(lv_fragment_t *self, lv_obj_t *view) {
 
     lv_obj_add_event_cb(controller->stats_pin, pin_toggle, LV_EVENT_VALUE_CHANGED, controller->stats);
 
-#if !defined(TARGET_WEBOS)
-    const app_settings_t *settings = &controller->global->settings;
-    if (settings->syskey_capture) {
+    /* Grab keyboard for the stream so USB F-keys / Home / Insert are not eaten by the
+     * compositor (webOS) or the desktop WM. On desktop, honor syskey_capture; on webOS
+     * always grab while streaming — F1–F12/Insert need it regardless of Meta capture. */
+#if defined(TARGET_WEBOS)
+    SDL_SetWindowGrab(controller->global->ui.window, SDL_TRUE);
+#if SDL_VERSION_ATLEAST(2, 0, 16)
+    SDL_SetWindowKeyboardGrab(controller->global->ui.window, SDL_TRUE);
+#endif
+#else
+    if (controller->global->settings.syskey_capture) {
         SDL_SetWindowGrab(controller->global->ui.window, SDL_TRUE);
+#if SDL_VERSION_ATLEAST(2, 0, 16)
+        SDL_SetWindowKeyboardGrab(controller->global->ui.window, SDL_TRUE);
+#endif
     }
 #endif
 #if TARGET_WEBOS
@@ -588,8 +598,9 @@ static void on_delete_obj(lv_fragment_t *self, lv_obj_t *view) {
     app_input_set_group(&controller->global->ui.input, NULL);
     lv_group_del(controller->group);
 
-#if !defined(TARGET_WEBOS)
     SDL_SetWindowGrab(controller->global->ui.window, SDL_FALSE);
+#if SDL_VERSION_ATLEAST(2, 0, 16)
+    SDL_SetWindowKeyboardGrab(controller->global->ui.window, SDL_FALSE);
 #endif
 }
 

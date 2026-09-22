@@ -79,12 +79,19 @@ int session_worker(session_t *session) {
     }
 #endif
     short gamepad_mask;
-    /* Refresh before launch so Sunshine/Apollo allocate a slot for every pad
-     * already attached (remoteControllersBitmap / gcmap). */
+    /* Refresh local pad list so Arrival can announce every attached controller
+     * (2nd DualSense on webOS often missed JOYDEVICEADDED). Always launch with
+     * gcmap=0 on Sunshine/Apollo: a non-zero mask plus Controller Arrival made
+     * the host allocate two ViGEm pads for one physical controller on first connect.
+     * GFE still needs the bitmap at launch. */
     app_input_scan_gamepads(&app->input);
-    gamepad_mask = app_input_gamepads_mask(&app->input);
-    commons_log_info("Session", "Launch gamepad mask=0x%x (%d pad(s))", gamepad_mask,
-                     app_input_get_gamepads_count(&app->input));
+    if (server->isGfe) {
+        gamepad_mask = app_input_gamepads_mask(&app->input);
+    } else {
+        gamepad_mask = 0;
+    }
+    commons_log_info("Session", "Launch gamepad mask=0x%x (local count=%d, gfe=%d)", gamepad_mask,
+                     app_input_get_gamepads_count(&app->input), server->isGfe ? 1 : 0);
     int ret = gs_start_app(client, server, &session->config.stream, appId, server->isGfe, session->config.sops,
                            session->config.local_audio, gamepad_mask, surround_params);
     if (ret != GS_OK) {

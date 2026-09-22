@@ -129,7 +129,7 @@ void session_interrupt(session_t *session, bool quitapp, streaming_interrupt_rea
     if (reason >= STREAMING_INTERRUPT_ERROR) {
         switch (reason) {
             case STREAMING_INTERRUPT_WATCHDOG:
-                streaming_error(session, reason, "Stream stalled");
+                streaming_error(session, reason, "Video pipeline stalled");
                 break;
             case STREAMING_INTERRUPT_NETWORK:
                 streaming_error(session, reason, "Network error happened");
@@ -326,17 +326,19 @@ void session_config_init(app_t *app, session_config_t *config, const SERVER_DATA
     if (video_cap.codecs & SS4S_VIDEO_H264) {
         config->stream.supportedVideoFormats |= VIDEO_FORMAT_H264;
     }
-    if (app_config->hevc && video_cap.codecs & SS4S_VIDEO_H265) {
-        config->stream.supportedVideoFormats |= VIDEO_FORMAT_H265;
-        if ((app_config->hdr && video_cap.hdr) || app_config->force_10bit) {
-            config->stream.supportedVideoFormats |= VIDEO_FORMAT_H265_MAIN10;
-        }
-    }
-    /* NDL AV1 presents at 60 Hz even when 120 is requested. HEVC is required above 60. */
-    if (app_config->av1 && video_cap.codecs & SS4S_VIDEO_AV1 && app_config->stream.fps <= 60) {
+    /* AV1 selected ⇒ advertise AV1 only (plus H.264 fallback). Host prefers HEVC when
+     * both bits are set, which made the AV1 checkbox appear ignored. NDL still presents
+     * AV1 at 60 Hz above that rate — that is a TV limit, not a reason to force HEVC. */
+    if (app_config->av1 && (video_cap.codecs & SS4S_VIDEO_AV1)) {
         config->stream.supportedVideoFormats |= VIDEO_FORMAT_AV1_MAIN8;
         if ((app_config->hdr && video_cap.hdr) || app_config->force_10bit) {
             config->stream.supportedVideoFormats |= VIDEO_FORMAT_AV1_MAIN10;
+        }
+        commons_log_info("Session", "Codec preference: AV1 (HEVC not advertised)");
+    } else if (app_config->hevc && (video_cap.codecs & SS4S_VIDEO_H265)) {
+        config->stream.supportedVideoFormats |= VIDEO_FORMAT_H265;
+        if ((app_config->hdr && video_cap.hdr) || app_config->force_10bit) {
+            config->stream.supportedVideoFormats |= VIDEO_FORMAT_H265_MAIN10;
         }
     }
     // If no video format is supported, default to H.264

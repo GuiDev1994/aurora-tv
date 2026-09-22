@@ -93,10 +93,11 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     pref_header(view, locstr("Experimental"));
 
 #if FEATURE_I18N_LANGUAGE_SETTINGS
-    pref_header(view, locstr("Language"));
-    lv_obj_t *lang_dd = pref_dropdown_string(view, pane->lang_entries, (size_t) pane->lang_entries_len,
+    lv_obj_t *lang_row = pref_focus_row(view, locstr("Language"));
+    lv_obj_t *lang_dd = pref_dropdown_string(lang_row, pane->lang_entries, (size_t) pane->lang_entries_len,
                                             &app_configuration->language);
     lv_obj_set_width(lang_dd, LV_PCT(100));
+    pref_row_bind_control(lang_row, lang_dd);
     pref_desc_label(view,
                     locstr("Applies as soon as you change it. System Language follows the TV."),
                     false);
@@ -128,6 +129,15 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
                            "range — turn on only if SDR looks washed out."),
                     false);
     lv_obj_add_event_cb(full_range, reconnect_cb, LV_EVENT_VALUE_CHANGED, pane);
+
+    lv_obj_t *sliced = pref_checkbox(view, locstr("HEVC sliced frames"),
+                                     &app_configuration->hevc_sliced_frames, false);
+    pref_desc_label(view,
+                    locstr("Ask the host to encode HEVC in multiple slices (faster host pipelining). "
+                           "The TV still gets one complete frame per feed. Off by default — turn on "
+                           "only if you need lower encode latency and the picture stays clean."),
+                    false);
+    lv_obj_add_event_cb(sliced, reconnect_cb, LV_EVENT_VALUE_CHANGED, pane);
 
     lv_obj_t *idr_checkbox = lv_checkbox_create(view);
     lv_checkbox_set_text(idr_checkbox, locstr("Periodic decoder refresh (HEVC)"));

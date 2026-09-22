@@ -31,6 +31,16 @@ bool app_input_init_gamepad(app_input_t *input, int device_index) {
     char guidstr[33];
     SDL_JoystickGetGUIDString(guid, guidstr, 33);
     const char *name = SDL_JoystickNameForIndex(device_index);
+#if SDL_VERSION_ATLEAST(2, 0, 6)
+    /* Scan at init/stream start plus JOY/CONTROLLER DEVICEADDED can all see the
+     * same pad. Bail before Open if we already track this instance. */
+    {
+        SDL_JoystickID existing_id = SDL_JoystickGetDeviceInstanceID(device_index);
+        if (existing_id >= 0 && app_input_gamepad_state_by_instance_id(input, existing_id) != NULL) {
+            return false;
+        }
+    }
+#endif
     if (SDL_IsGameController(device_index)) {
         SDL_GameController *controller = SDL_GameControllerOpen(device_index);
         if (!controller) {
@@ -43,6 +53,17 @@ bool app_input_init_gamepad(app_input_t *input, int device_index) {
         if (webos_should_ignore_controller_like_device(name, guidstr, joystick)) {
             SDL_GameControllerClose(controller);
             return false;
+        }
+#endif
+#if SDL_VERSION_ATLEAST(2, 0, 6)
+        /* SDL_GameControllerOpen on an already-open device returns the same
+         * handle. Without this check we allocate a second gs_id for one pad
+         * (host shows P1 twice; P2 needs double reconnect). Do not Close. */
+        {
+            SDL_JoystickID sdl_id = SDL_JoystickInstanceID(joystick);
+            if (sdl_id >= 0 && app_input_gamepad_state_by_instance_id(input, sdl_id) != NULL) {
+                return false;
+            }
         }
 #endif
 
@@ -84,6 +105,10 @@ int app_input_scan_gamepads(app_input_t *input) {
             opened++;
         }
     }
+    /* Drop ADDED events queued while we opened during scan — otherwise the
+     * event loop re-opens / re-announces the same DualSense as a second pad. */
+    SDL_FlushEvent(SDL_JOYDEVICEADDED);
+    SDL_FlushEvent(SDL_CONTROLLERDEVICEADDED);
     if (opened > 0) {
         commons_log_info("Input", "Gamepad scan opened %d additional controller(s); mask=0x%x count=%d",
                          opened, input->activeGamepadMask, app_input_get_gamepads_count(input));
@@ -156,12 +181,19 @@ app_gamepad_state_t *app_input_gamepad_state_init(app_input_t *input, SDL_GameCo
     state->haptic = haptic;
     state->haptic_effect_id = -1;
 #endif
+#if TARGET_WEBOS
+    state->ds_usb = dualsense_usb_open(controller);
+#endif
     commons_log_info("Input", "Controller #%d (%s) connected", state->gs_id,
                      SDL_JoystickName(joystick));
     return state;
 }
 
 void app_input_gamepad_state_deinit(app_gamepad_state_t *state) {
+#if TARGET_WEBOS
+    dualsense_usb_close(state->ds_usb);
+    state->ds_usb = NULL;
+#endif
     short gsId = state->gs_id;
     SDL_JoystickGUID guid = state->guid;
     uint32_t serialCrc = state->serial_crc;
@@ -306,15 +338,18 @@ void app_input_gamepad_set_motion_event_state(app_input_t *input, unsigned short
 
 void app_input_gamepad_set_controller_led(app_input_t *input, unsigned short controllerNumber, uint8_t r, uint8_t g,
                                           uint8_t b) {
-#if SDL_VERSION_ATLEAST(2, 0, 14)
     app_gamepad_state_t *state = app_input_gamepad_state_by_gs_id(input, controllerNumber);
     if (state == NULL || state->controller == NULL) {
         return;
     }
+#if TARGET_WEBOS
+    if (state->ds_usb != NULL && dualsense_usb_set_lightbar(state->ds_usb, r, g, b)) {
+        return;
+    }
+#endif
+#if SDL_VERSION_ATLEAST(2, 0, 14)
     SDL_GameControllerSetLED(state->controller, r, g, b);
 #else
-    (void) input;
-    (void) controllerNumber;
     (void) r;
     (void) g;
     (void) b;
@@ -349,16 +384,33 @@ static int app_input_gamepad_send_ps5_effect(app_input_t *input, unsigned short 
 
 void app_input_gamepad_set_adaptive_triggers(app_input_t *input, unsigned short controllerNumber, uint8_t eventFlags,
                                              uint8_t typeLeft, uint8_t typeRight, uint8_t *left, uint8_t *right) {
-    uint8_t report[24] = {0x02, 0x04};
+#if TARGET_WEBOS
+    app_gamepad_state_t *state = app_input_gamepad_state_by_gs_id(input, controllerNumber);
+    if (state != NULL && state->ds_usb != NULL &&
+        dualsense_usb_set_adaptive_triggers(state->ds_usb, eventFlags, typeLeft, typeRight, left, right)) {
+        return;
+    }
+#endif
+    /* Fallback: SDL SendEffect (often a no-op on webOS Bluetooth DualSense). */
+    uint8_t report[2 + 1 + DS_EFFECT_PAYLOAD_SIZE + 1 + DS_EFFECT_PAYLOAD_SIZE];
+    memset(report, 0, sizeof(report));
+    report[0] = 0x02;
+    report[1] = 0x00;
     int offset = 2;
     if (eventFlags & DS_EFFECT_LEFT_TRIGGER) {
+        report[1] |= 0x08;
         report[offset++] = typeLeft;
-        memcpy(&report[offset], left, DS_EFFECT_PAYLOAD_SIZE);
+        if (left != NULL) {
+            memcpy(&report[offset], left, DS_EFFECT_PAYLOAD_SIZE);
+        }
         offset += DS_EFFECT_PAYLOAD_SIZE;
     }
     if (eventFlags & DS_EFFECT_RIGHT_TRIGGER) {
+        report[1] |= 0x04;
         report[offset++] = typeRight;
-        memcpy(&report[offset], right, DS_EFFECT_PAYLOAD_SIZE);
+        if (right != NULL) {
+            memcpy(&report[offset], right, DS_EFFECT_PAYLOAD_SIZE);
+        }
         offset += DS_EFFECT_PAYLOAD_SIZE;
     }
     if (offset > 2) {
@@ -367,11 +419,23 @@ void app_input_gamepad_set_adaptive_triggers(app_input_t *input, unsigned short 
 }
 
 void app_input_gamepad_set_player_led(app_input_t *input, unsigned short controllerNumber, uint8_t ledValue) {
+#if TARGET_WEBOS
+    app_gamepad_state_t *state = app_input_gamepad_state_by_gs_id(input, controllerNumber);
+    if (state != NULL && state->ds_usb != NULL && dualsense_usb_set_player_led(state->ds_usb, ledValue)) {
+        return;
+    }
+#endif
     uint8_t report[2] = {0x05, ledValue};
     app_input_gamepad_send_ps5_effect(input, controllerNumber, report, sizeof(report));
 }
 
 void app_input_gamepad_set_mic_led(app_input_t *input, unsigned short controllerNumber, uint8_t ledState) {
+#if TARGET_WEBOS
+    app_gamepad_state_t *state = app_input_gamepad_state_by_gs_id(input, controllerNumber);
+    if (state != NULL && state->ds_usb != NULL && dualsense_usb_set_mic_led(state->ds_usb, ledState)) {
+        return;
+    }
+#endif
     uint8_t report[2] = {0x06, ledState};
     app_input_gamepad_send_ps5_effect(input, controllerNumber, report, sizeof(report));
 }

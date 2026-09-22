@@ -64,7 +64,11 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     pref_desc_label(view, locstr("Don't send mouse, keyboard or gamepad input to host computer."), false);
 
     pref_checkbox(view, locstr("Capture system keys"), &app_configuration->syskey_capture, false);
-    pref_desc_label(view, locstr("Capture and send system keys (e.g. Meta/Win key) to host computer."), false);
+    pref_desc_label(view,
+                    locstr("Send Win/Meta to the host. On webOS, Home is always captured for "
+                           "streaming; turn this on to also forward Win. Restart the app after "
+                           "changing. Default is on."),
+                    false);
 
     pref_header(view, locstr("Mouse"));
 

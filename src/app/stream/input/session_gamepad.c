@@ -640,23 +640,6 @@ void stream_input_update_touchpad_tap_hold(stream_input_t *input) {
 }
 
 void stream_input_handle_cdevice(stream_input_t *input, const SDL_ControllerDeviceEvent *event) {
-    if (event->type == SDL_CONTROLLERDEVICEADDED) {
-#if SDL_VERSION_ATLEAST(2, 0, 6)
-        SDL_JoystickID instance_id = SDL_JoystickGetDeviceInstanceID(event->which);
-        if (instance_id < 0) {
-            stream_input_send_unannounced_gamepads(input);
-            return;
-        }
-        app_gamepad_state_t *gamepad = app_input_gamepad_state_by_instance_id(input->input, instance_id);
-        if (gamepad == NULL || input->view_only) {
-            return;
-        }
-        stream_input_send_gamepad_arrive(input, gamepad);
-#else
-        stream_input_send_unannounced_gamepads(input);
-#endif
-        return;
-    }
     if (event->type != SDL_CONTROLLERDEVICEREMOVED) {
         return;
     }
