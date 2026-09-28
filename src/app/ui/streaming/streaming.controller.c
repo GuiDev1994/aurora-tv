@@ -270,9 +270,11 @@ bool streaming_refresh_stats() {
             (void) first;
         }
         if (len > 0 && (size_t) len < sizeof(stats_line)) {
-            if (audio_stream_info.feedFailures > 0) {
+            if (audio_stream_info.feedFailures > 0 || audio_stream_info.maxGapMs >= 40) {
                 snprintf(stats_line + len, sizeof(stats_line) - (size_t) len,
-                         " | %s AF %u", audio_ch, (unsigned) audio_stream_info.feedFailures);
+                         " | %s AF %u AG %u", audio_ch,
+                         (unsigned) audio_stream_info.feedFailures,
+                         (unsigned) audio_stream_info.maxGapMs);
             } else {
                 snprintf(stats_line + len, sizeof(stats_line) - (size_t) len, " | %s", audio_ch);
             }

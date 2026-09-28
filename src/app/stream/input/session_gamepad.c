@@ -728,6 +728,8 @@ void stream_input_send_gamepad_arrive(stream_input_t *input, app_gamepad_state_t
     if (SDL_GameControllerHasRumble(gamepad->controller)) {
         capabilities |= LI_CCAP_RUMBLE;
         commons_log_info("Input", "  controller capability: rumble");
+    } else {
+        commons_log_warn("Input", "  controller has no rumble, none will be requested");
     }
     if (SDL_GameControllerHasRumbleTriggers(gamepad->controller)) {
         capabilities |= LI_CCAP_TRIGGER_RUMBLE;

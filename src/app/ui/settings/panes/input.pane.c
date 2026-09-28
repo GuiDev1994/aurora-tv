@@ -3,9 +3,12 @@
 
 #include "pref_obj.h"
 
+#include "input/input_gamepad.h"
 #include "util/i18n.h"
 
+#include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 typedef struct input_pane_t {
     lv_fragment_t base;
@@ -18,6 +21,9 @@ typedef struct input_pane_t {
 
     pref_dropdown_int_entry_t touchpad_mode_entries[2];
     lv_obj_t *touchpad_speed_label;
+
+    lv_obj_t *gamepad_report_label;
+    lv_obj_t *gamepad_test_result;
 } input_pane_t;
 
 static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *view);
@@ -37,6 +43,12 @@ static void hwmouse_state_update(input_pane_t *pane);
 static void update_deadzone_label(input_pane_t *pane);
 
 static void on_deadzone_changed(lv_event_t *e);
+
+static void gamepad_report_update(input_pane_t *pane);
+
+static void on_gamepad_refresh_clicked(lv_event_t *e);
+
+static void on_gamepad_rumble_clicked(lv_event_t *e);
 
 const lv_fragment_class_t settings_pane_input_cls = {
         .constructor_cb = pane_ctor,
@@ -147,6 +159,33 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
                                  "or gamepad Y while virtual mouse is active."),
                     false);
 
+    pref_header(view, locstr("Gamepad test"));
+    pane->gamepad_report_label = pref_desc_label(view, NULL, false);
+    lv_obj_set_width(pane->gamepad_report_label, LV_PCT(100));
+
+    lv_obj_t *refresh_btn = lv_btn_create(view);
+    lv_obj_set_width(refresh_btn, LV_PCT(100));
+    lv_obj_t *refresh_lbl = lv_label_create(refresh_btn);
+    lv_label_set_text(refresh_lbl, locstr("Detect connected gamepads"));
+    lv_obj_center(refresh_lbl);
+    lv_obj_add_event_cb(refresh_btn, on_gamepad_refresh_clicked, LV_EVENT_CLICKED, pane);
+
+    lv_obj_t *rumble_btn = lv_btn_create(view);
+    lv_obj_set_width(rumble_btn, LV_PCT(100));
+    lv_obj_t *rumble_lbl = lv_label_create(rumble_btn);
+    lv_label_set_text(rumble_lbl, locstr("Test rumble"));
+    lv_obj_center(rumble_lbl);
+    lv_obj_add_event_cb(rumble_btn, on_gamepad_rumble_clicked, LV_EVENT_CLICKED, pane);
+
+    pane->gamepad_test_result = pref_desc_label(view, NULL, false);
+    lv_obj_set_width(pane->gamepad_test_result, LV_PCT(100));
+    pref_desc_label(view, locstr("Rumble here is produced by this TV alone, with no host involved. "
+                                 "If the pad shakes here but stays still in a game, the host is not "
+                                 "sending rumble and the problem is not on this side."),
+                    false);
+
+    gamepad_report_update(pane);
+
 #if FEATURE_INPUT_EVMOUSE
     hwmouse_state_update(pane);
 #endif
@@ -191,4 +230,123 @@ static void update_deadzone_label(input_pane_t *pane) {
 static void on_deadzone_changed(lv_event_t *e) {
     input_pane_t *pane = (input_pane_t *) lv_event_get_user_data(e);
     update_deadzone_label(pane);
+}
+
+static const char *gamepad_type_name(SDL_GameController *controller) {
+#if SDL_VERSION_ATLEAST(2, 0, 12)
+    switch (SDL_GameControllerGetType(controller)) {
+        case SDL_CONTROLLER_TYPE_XBOX360:
+            return "Xbox 360";
+        case SDL_CONTROLLER_TYPE_XBOXONE:
+            return "Xbox One";
+        case SDL_CONTROLLER_TYPE_PS3:
+            return "PlayStation 3";
+        case SDL_CONTROLLER_TYPE_PS4:
+            return "DualShock 4";
+#if SDL_VERSION_ATLEAST(2, 0, 14)
+        case SDL_CONTROLLER_TYPE_PS5:
+            return "DualSense";
+        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
+            return "Joy-Con (L)";
+        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
+            return "Joy-Con (R)";
+        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
+            return "Joy-Con pair";
+#endif
+        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO:
+            return "Switch Pro";
+#if SDL_VERSION_ATLEAST(2, 0, 14)
+        case SDL_CONTROLLER_TYPE_VIRTUAL:
+            return "virtual";
+#endif
+        default:
+            return "unrecognised";
+    }
+#else
+    (void) controller;
+    return "unknown";
+#endif
+}
+
+static void gamepad_report_update(input_pane_t *pane) {
+    char report[768];
+    report[0] = '\0';
+    size_t used = 0;
+    int found = 0;
+    app_input_t *input = global != NULL ? &global->input : NULL;
+    short max_pads = input != NULL ? app_input_get_max_gamepads(input) : 0;
+
+    for (short i = 0; i < max_pads && used + 1 < sizeof(report); i++) {
+        app_gamepad_state_t *state = &input->gamepads[i];
+        SDL_GameController *controller = state->controller;
+        if (controller == NULL) {
+            continue;
+        }
+        found++;
+        const char *name = SDL_GameControllerName(controller);
+        const char *path = NULL;
+        const char *writable = locstr("unknown");
+#if SDL_VERSION_ATLEAST(2, 24, 0)
+        path = SDL_JoystickPath(SDL_GameControllerGetJoystick(controller));
+        if (path != NULL) {
+            writable = access(path, W_OK) == 0 ? locstr("writable") : locstr("READ-ONLY");
+        }
+#endif
+        int rumble = 0;
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+        rumble = SDL_GameControllerHasRumble(controller) ? 1 : 0;
+#endif
+        int written = snprintf(report + used, sizeof(report) - used,
+                               "#%d %s\n    %s: %s\n    %s: %s (%s)\n    %s: %s\n",
+                               state->gs_id, name != NULL ? name : "?",
+                               locstr("Model"), gamepad_type_name(controller),
+                               locstr("Device"), path != NULL ? path : "?", writable,
+                               locstr("Rumble"), rumble ? locstr("supported") : locstr("not supported"));
+        if (written < 0) {
+            break;
+        }
+        if ((size_t) written >= sizeof(report) - used) {
+            used = sizeof(report) - 1;
+            break;
+        }
+        used += (size_t) written;
+    }
+    if (found == 0) {
+        lv_label_set_text(pane->gamepad_report_label, locstr("No gamepad connected."));
+    } else {
+        lv_label_set_text(pane->gamepad_report_label, report);
+    }
+}
+
+static void on_gamepad_refresh_clicked(lv_event_t *e) {
+    input_pane_t *pane = (input_pane_t *) lv_event_get_user_data(e);
+    gamepad_report_update(pane);
+    lv_label_set_text(pane->gamepad_test_result, "");
+}
+
+static void on_gamepad_rumble_clicked(lv_event_t *e) {
+    input_pane_t *pane = (input_pane_t *) lv_event_get_user_data(e);
+    app_input_t *input = global != NULL ? &global->input : NULL;
+    short max_pads = input != NULL ? app_input_get_max_gamepads(input) : 0;
+
+    for (short i = 0; i < max_pads; i++) {
+        SDL_GameController *controller = input->gamepads[i].controller;
+        if (controller == NULL) {
+            continue;
+        }
+#if SDL_VERSION_ATLEAST(2, 0, 9)
+        if (SDL_GameControllerRumble(controller, 0xC000, 0xC000, 1000) == 0) {
+            lv_label_set_text(pane->gamepad_test_result,
+                              locstr("Rumble sent. If nothing moved, the pad ignored it."));
+        } else {
+            lv_label_set_text_fmt(pane->gamepad_test_result, "%s: %s",
+                                  locstr("SDL refused the rumble"), SDL_GetError());
+        }
+#else
+        (void) controller;
+        lv_label_set_text(pane->gamepad_test_result, locstr("SDL refused the rumble"));
+#endif
+        return;
+    }
+    lv_label_set_text(pane->gamepad_test_result, locstr("No gamepad connected."));
 }

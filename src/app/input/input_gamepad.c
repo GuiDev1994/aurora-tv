@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <string.h>
+#include <unistd.h>
 #include <SDL_version.h>
 #include <Limelight.h>
 #include <assert.h>
@@ -186,6 +187,13 @@ app_gamepad_state_t *app_input_gamepad_state_init(app_input_t *input, SDL_GameCo
 #endif
     commons_log_info("Input", "Controller #%d (%s) connected", state->gs_id,
                      SDL_JoystickName(joystick));
+#if SDL_VERSION_ATLEAST(2, 24, 0)
+    const char *path = SDL_JoystickPath(joystick);
+    commons_log_info("Input", "Controller #%d device: %s, rumble: %s, writable: %s", state->gs_id,
+                     path != NULL ? path : "(unknown)",
+                     SDL_GameControllerHasRumble(controller) ? "yes" : "no",
+                     path == NULL ? "unknown" : (access(path, W_OK) == 0 ? "yes" : "NO"));
+#endif
     return state;
 }
 
@@ -253,7 +261,16 @@ void app_input_gamepad_rumble(app_input_t *input, unsigned short controller_id,
     }
 
 #if SDL_VERSION_ATLEAST(2, 0, 9)
-    SDL_GameControllerRumble(state->controller, low_freq_motor, high_freq_motor, SDL_HAPTIC_INFINITY);
+    if (!state->rumble_requested) {
+        state->rumble_requested = true;
+        commons_log_info("Input", "Controller #%d first rumble request: low %u, high %u", state->gs_id,
+                         low_freq_motor, high_freq_motor);
+    }
+    if (SDL_GameControllerRumble(state->controller, low_freq_motor, high_freq_motor, SDL_HAPTIC_INFINITY) != 0 &&
+        !state->rumble_failed) {
+        state->rumble_failed = true;
+        commons_log_warn("Input", "Controller #%d cannot rumble: %s", state->gs_id, SDL_GetError());
+    }
 #else
     SDL_Haptic *haptic = state->haptic;
     if (!haptic) {
