@@ -75,6 +75,7 @@ static bool tag_priority(const char *tag) {
            || strcmp(tag, "ABR") == 0
            || strcmp(tag, "APP") == 0
            || strcmp(tag, "Video") == 0
+           || strcmp(tag, "Input") == 0
            || strcmp(tag, "Log") == 0;
 }
 

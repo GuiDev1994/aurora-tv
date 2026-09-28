@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdbool.h>
+
 #include <SDL_haptic.h>
 #include <SDL_joystick.h>
 #include <SDL_version.h>
@@ -8,6 +10,10 @@
 
 #include "lvgl.h"
 #include "lvgl/input/lv_drv_sdl_key.h"
+
+#if TARGET_WEBOS
+#include "platform/webos/dualsense_usb.h"
+#endif
 
 typedef struct app_t app_t;
 
@@ -35,6 +41,9 @@ typedef struct app_gamepad_state_t {
 #if !SDL_VERSION_ATLEAST(2, 0, 9)
     SDL_Haptic *haptic;
     int haptic_effect_id;
+#else
+    bool rumble_requested;
+    bool rumble_failed;
 #endif
 #if SDL_VERSION_ATLEAST(2, 0, 14)
     app_gamepad_sensor_state_t accelState;
@@ -42,6 +51,10 @@ typedef struct app_gamepad_state_t {
 #endif
     uint8_t lastBatteryState;
     uint8_t lastBatteryPercentage;
+#if TARGET_WEBOS
+    /** Wired DualSense hidraw feedback; NULL when BT or open failed. */
+    dualsense_usb_t *ds_usb;
+#endif
 } app_gamepad_state_t;
 
 typedef struct app_input_t {

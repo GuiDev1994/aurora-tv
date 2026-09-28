@@ -2,6 +2,7 @@
 #include <assert.h>
 
 #include <opus_multistream.h>
+#include <Limelight.h>
 
 #include "ss4s.h"
 #include "stream/connection/session_connection.h"
@@ -16,6 +17,7 @@ static SS4S_Player *player = NULL;
 static OpusMSDecoder *decoder = NULL;
 static unsigned char *buffer = NULL;
 static int frame_size = 0, unit_size = 0;
+static uint64_t aud_last_feed_us = 0;
 
 AUDIO_INFO audio_stream_info;
 
@@ -28,6 +30,7 @@ static int aud_init(int audioConfiguration, const POPUS_MULTISTREAM_CONFIGURATIO
     (void) audioConfiguration;
     (void) arFlags;
     memset(&audio_stream_info, 0, sizeof(audio_stream_info));
+    aud_last_feed_us = 0;
     session = context;
     player = session->player;
     SS4S_AudioCodec codec = SS4S_AUDIO_PCM_S16LE;
@@ -117,6 +120,20 @@ static void aud_buffers_free(void) {
 }
 
 static void aud_feed(char *sampleData, int sampleLength) {
+    uint64_t now_us = LiGetMicroseconds();
+    if (aud_last_feed_us != 0) {
+        uint32_t gap_ms = (uint32_t) ((now_us - aud_last_feed_us) / 1000ULL);
+        if (gap_ms > audio_stream_info.maxGapMs) {
+            audio_stream_info.maxGapMs = gap_ms;
+        }
+        /* Host silence / packet loss: Opus frames are 5 ms; >40 ms is a real gap. */
+        if (gap_ms >= 40 && gap_ms == audio_stream_info.maxGapMs) {
+            commons_log_warn("Session", "Audio inter-feed gap %u ms (new max)",
+                             (unsigned) gap_ms);
+        }
+    }
+    aud_last_feed_us = now_us;
+
     SS4S_AudioFeedResult result;
     if (decoder != NULL) {
         int decode_len = opus_multistream_decode(decoder, (unsigned char *) sampleData, sampleLength,

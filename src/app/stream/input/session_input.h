@@ -9,9 +9,11 @@
 #include "input/input_gamepad.h"
 
 #if FEATURE_INPUT_EVMOUSE
-
 #include "session_evmouse.h"
+#endif
 
+#if TARGET_WEBOS
+#include "platform/webos/keyboard_evdev.h"
 #endif
 
 typedef struct app_input_t app_input_t;
@@ -57,6 +59,9 @@ typedef struct stream_input_t {
     session_input_touchpad_t *touchpads;
 #if FEATURE_INPUT_EVMOUSE
     session_evmouse_t evmouse;
+#endif
+#if TARGET_WEBOS
+    struct keyboard_evdev_t *keyboard_evdev;
 #endif
 } stream_input_t;
 

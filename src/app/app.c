@@ -67,14 +67,16 @@ int app_init(app_t *app, app_settings_loader *settings_loader, int argc, char *a
 #if TARGET_WEBOS
     SDL_SetHint(SDL_HINT_WEBOS_ACCESS_POLICY_KEYS_BACK, "true");
     SDL_SetHint(SDL_HINT_WEBOS_ACCESS_POLICY_KEYS_EXIT, "true");
+    /* Always capture Home (and Win, same policy class) so the TV does not steal them
+     * before SDL. Latched at window creation — restart app after changing related settings. */
+    SDL_SetHint(SDL_HINT_WEBOS_ACCESS_POLICY_KEYS_HOME, "true");
+    SDL_SetHint(SDL_HINT_WEBOS_ACCESS_POLICY_RIBBON, "false");
     SDL_SetHint(SDL_HINT_WEBOS_CURSOR_SLEEP_TIME, "5000");
     SDL_SetHint(SDL_HINT_WEBOS_CURSOR_FREQUENCY, "60");
     SDL_SetHint(SDL_HINT_WEBOS_CURSOR_CALIBRATION_DISABLE, "true");
-    SDL_SetHint(SDL_HINT_WEBOS_HIDAPI_IGNORE_BLUETOOTH_DEVICES, "0x057e/0x0000");
-    if (app->settings.syskey_capture) {
-        SDL_SetHint(SDL_HINT_WEBOS_ACCESS_POLICY_KEYS_HOME, "true");
-        SDL_SetHint(SDL_HINT_WEBOS_ACCESS_POLICY_RIBBON, "false");
-    }
+    /* Do not ignore Nintendo VID 0x057e over Bluetooth. That wildcard hid every
+     * Switch-mode pad (including 8BitDo) from SDL HIDAPI and left rumble on
+     * hid-nintendo, which never finishes on those clones (PR #78). */
 #else
     if (app->settings.syskey_capture) {
         SDL_SetHint(SDL_HINT_GRAB_KEYBOARD, "1");

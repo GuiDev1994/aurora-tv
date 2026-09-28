@@ -58,6 +58,8 @@ static void settings_dropdown_esc_preprocess_cb(lv_event_t *e);
 
 static void settings_dropdown_arrow_preprocess_cb(lv_event_t *e);
 
+static void settings_dropdown_activate_guard_cb(lv_event_t *e);
+
 static void settings_item_nav_preprocess(lv_event_t *e);
 
 static void settings_popup_disarm_cb(void *user_data);
@@ -443,6 +445,11 @@ static void settings_attach_dropdown_handlers(settings_controller_t *controller,
     lv_obj_add_event_cb(dropdown, on_dropdown_clicked, LV_EVENT_CLICKED, controller);
     lv_obj_add_event_cb(dropdown, settings_dropdown_esc_preprocess_cb, LV_EVENT_KEY | LV_EVENT_PREPROCESS, controller);
     lv_obj_add_event_cb(dropdown, settings_dropdown_arrow_preprocess_cb, LV_EVENT_KEY | LV_EVENT_PREPROCESS, controller);
+    /* Opening a pane focuses the first control; a leftover OK/click must not expand it. */
+    lv_obj_add_event_cb(dropdown, settings_dropdown_activate_guard_cb, LV_EVENT_RELEASED | LV_EVENT_PREPROCESS,
+                        controller);
+    lv_obj_add_event_cb(dropdown, settings_dropdown_activate_guard_cb, LV_EVENT_PRESSED | LV_EVENT_PREPROCESS,
+                        controller);
     if (popup) {
         lv_obj_add_event_cb(dropdown, settings_dropdown_cancel_cb, LV_EVENT_CANCEL, controller);
     }
@@ -521,15 +528,29 @@ static void settings_popup_focus_cb(void *user_data) {
     if (c == NULL || c->pane_mbox == NULL || c->pane_popup_group == NULL) {
         return;
     }
+    /* Editable dropdowns open on focus when the group is in edit mode (leftover
+     * from a previous pane). Always enter navigate mode with the list closed. */
+    lv_group_set_editing(c->pane_popup_group, false);
     lv_obj_t *content = lv_msgbox_get_content(c->pane_mbox);
     lv_obj_t *first = content ? embed_popup_first_focusable(content) : NULL;
     if (first != NULL) {
         lv_group_focus_obj(first);
+        if (lv_obj_has_class(first, &lv_dropdown_class) && lv_dropdown_is_open(first)) {
+            lv_dropdown_close(first);
+        }
         if (app_ui_get_input_mode(&c->app->ui.input) & UI_INPUT_MODE_BUTTON_FLAG) {
             lv_obj_add_state(first, LV_STATE_FOCUS_KEY);
         }
     }
     lv_async_call(settings_popup_disarm_cb, c);
+}
+
+static void settings_dropdown_activate_guard_cb(lv_event_t *e) {
+    settings_controller_t *c = lv_event_get_user_data(e);
+    if (c == NULL || !c->suppress_item_activate) {
+        return;
+    }
+    lv_event_stop_processing(e);
 }
 
 static void settings_item_nav_preprocess(lv_event_t *e) {

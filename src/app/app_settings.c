@@ -178,6 +178,7 @@ void settings_initialize(app_settings_t *config, char *conf_dir) {
     config->report_gamepad_battery = true;
     config->hevc = true;
     config->av1 = false;
+    config->hevc_sliced_frames = false;
     config->idr_refresh_interval_ms = 0;
     config->render_queue_frames = 0;
     config->show_stats_on_start = false;
@@ -189,8 +190,9 @@ void settings_initialize(app_settings_t *config, char *conf_dir) {
     config->auto_adjust_bitrate = false;
     config->abr_mode = 0;
     config->game_mode = true;
-
 #if defined(TARGET_WEBOS)
+    /* Home/Win need KEYS_HOME; default capture on so Meta reaches the host too. */
+    config->syskey_capture = true;
     /* Auto pairs audio with the video module (SMP/NDL). */
     set_string(&config->audio_backend, "auto");
     settings_apply_ntsc_preset_refresh(config, config->stream.fps);
@@ -280,6 +282,7 @@ bool settings_save(app_settings_t *config) {
     ini_write_bool(fp, "force_full_color_range", config->force_full_color_range);
     ini_write_bool(fp, "hevc", config->hevc);
     ini_write_bool(fp, "av1", config->av1);
+    ini_write_bool(fp, "hevc_sliced_frames", config->hevc_sliced_frames);
     ini_write_int(fp, "idr_refresh_interval_ms", config->idr_refresh_interval_ms);
     ini_write_int(fp, "render_queue_frames", config->render_queue_frames);
     ini_write_bool(fp, "show_stats_on_start", config->show_stats_on_start);
@@ -434,8 +437,10 @@ static int settings_parse(app_settings_t *config, const char *section, const cha
         config->hevc = INI_IS_TRUE(value);
     } else if (INI_FULL_MATCH("video", "av1") || INI_NAME_MATCH("av1")) {
         config->av1 = INI_IS_TRUE(value);
+    } else if (INI_FULL_MATCH("video", "hevc_sliced_frames") || INI_NAME_MATCH("hevc_sliced_frames")) {
+        config->hevc_sliced_frames = INI_IS_TRUE(value);
     } else if (INI_FULL_MATCH("video", "video_simple_sdp")) {
-        /* Legacy: ignored; client always negotiates RFI + slices when applicable. */
+        /* Legacy: ignored; RFI always on for HEVC; slices gated by hevc_sliced_frames. */
     } else if (INI_FULL_MATCH("video", "presentation_offset_ms")) {
         /* Legacy: ignored; tight sync uses a fixed presentation offset in the decoder. */
     } else if (INI_NAME_MATCH("show_stats_on_start")) {

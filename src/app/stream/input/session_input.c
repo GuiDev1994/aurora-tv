@@ -24,6 +24,19 @@
 #include "input/app_input.h"
 #include "input/input_gamepad.h"
 
+#if TARGET_WEBOS
+#include "platform/webos/keyboard_evdev.h"
+#include "logging.h"
+
+static void session_keyboard_evdev_cb(short vk, bool down, char modifiers, void *userdata) {
+    stream_input_t *input = userdata;
+    if (input == NULL || !input->started || input->view_only) {
+        return;
+    }
+    stream_input_send_key_event(input, vk, down, modifiers);
+}
+#endif
+
 /* Pointer travel, in host pixels, for a finger swept across the full width of the
  * touchpad at 100% sensitivity. Vertical travel is derived from each pad's own
  * aspect ratio at motion time, so a given physical movement feels the same on
@@ -58,15 +71,30 @@ void session_input_init(stream_input_t *input, session_t *session, app_input_t *
                                               : -TOUCHPAD_SCROLL_FINGER_SCALE;
     input->touchpads = NULL;
     input->touchpad_count = 0;
+#if TARGET_WEBOS
+    input->keyboard_evdev = NULL;
+#endif
 #if FEATURE_INPUT_EVMOUSE
     if (!config->view_only && config->hardware_mouse) {
         session_evmouse_init(&input->evmouse, session);
+    }
+#endif
+#if TARGET_WEBOS
+    if (!config->view_only) {
+        input->keyboard_evdev = keyboard_evdev_start(session_keyboard_evdev_cb, input);
+        if (input->keyboard_evdev != NULL) {
+            commons_log_info("Input", "USB keyboard EVIOCGRAB active for stream");
+        }
     }
 #endif
 }
 
 void session_input_deinit(stream_input_t *input) {
     stream_input_touchpad_mouse_deinit(input);
+#if TARGET_WEBOS
+    keyboard_evdev_stop(input->keyboard_evdev);
+    input->keyboard_evdev = NULL;
+#endif
 #if FEATURE_INPUT_EVMOUSE
     const session_config_t *config = &input->session->config;
     if (!config->view_only && config->hardware_mouse) {

@@ -12,7 +12,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/mman.h>
 #include <sys/resource.h>
 #include <unistd.h>
 
@@ -22,7 +21,6 @@ struct webos_stream_priority_state {
     int old_nice;
     char old_governor[32];
     bool governor_changed;
-    bool locked_pages;
     int dma_latency_fd;
     int old_rmem_max;
     int old_rmem_default;
@@ -329,13 +327,9 @@ webos_stream_priority_state_t *webos_stream_priority_enter(void) {
         commons_log_info("StreamPrio", "nice %d -> -10", st->old_nice);
     }
 
-    if (mlockall(MCL_CURRENT | MCL_FUTURE) == 0) {
-        st->locked_pages = true;
-        commons_log_info("StreamPrio", "mlockall current+future");
-    } else {
-        commons_log_warn("StreamPrio", "mlockall failed: %s", strerror(errno));
-    }
-
+    /* mlockall(MCL_CURRENT|MCL_FUTURE) pinned the process (hundreds of MB) and
+     * the following NDL load left the TV near OOM. The watchdog rebooted the set
+     * (issue #75). Do not restore it. */
     hold_cpu_dma_latency(st);
     close_other_apps();
     apply_cpu_governor(st);
@@ -355,9 +349,6 @@ void webos_stream_priority_leave(webos_stream_priority_state_t *state) {
     if (state->dma_latency_fd >= 0) {
         close(state->dma_latency_fd);
         state->dma_latency_fd = -1;
-    }
-    if (state->locked_pages) {
-        (void) munlockall();
     }
     if (setpriority(PRIO_PROCESS, 0, state->old_nice) != 0) {
         commons_log_warn("StreamPrio", "restore nice failed: %s", strerror(errno));

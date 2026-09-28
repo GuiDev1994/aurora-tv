@@ -25,6 +25,8 @@ typedef struct {
 
     lv_obj_t *bitrate_label;
     lv_obj_t *bitrate_slider;
+    lv_obj_t *hevc_checkbox;
+    lv_obj_t *av1_checkbox;
     lv_obj_t *hdr_checkbox;
     lv_obj_t *hdr_hint;
     lv_obj_t *force_10bit_checkbox;
@@ -52,6 +54,8 @@ static void update_bitrate_label(basic_pane_t *pane);
 static void hdr_state_update(basic_pane_t *pane);
 
 static void hdr_state_update_cb(lv_event_t *e);
+
+static void codec_checkbox_cb(lv_event_t *e);
 
 static void module_changed_cb(lv_event_t *e);
 
@@ -171,16 +175,18 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
 
     lv_obj_t *hevc_checkbox = pref_checkbox(view, locstr("HEVC"), &app_configuration->hevc, false);
     lv_obj_set_height(hevc_checkbox, LV_DPX(72));
-    lv_obj_add_event_cb(hevc_checkbox, hdr_state_update_cb, LV_EVENT_VALUE_CHANGED, pane);
+    pane->hevc_checkbox = hevc_checkbox;
+    lv_obj_add_event_cb(hevc_checkbox, codec_checkbox_cb, LV_EVENT_VALUE_CHANGED, pane);
 
     lv_obj_t *av1_checkbox = pref_checkbox(view, locstr("AV1"), &app_configuration->av1, false);
     lv_obj_set_height(av1_checkbox, LV_DPX(72));
+    pane->av1_checkbox = av1_checkbox;
     if (app->ss4s.video_cap.codecs & SS4S_VIDEO_AV1) {
         lv_obj_clear_state(av1_checkbox, LV_STATE_DISABLED);
     } else {
         lv_obj_add_state(av1_checkbox, LV_STATE_DISABLED);
     }
-    lv_obj_add_event_cb(av1_checkbox, hdr_state_update_cb, LV_EVENT_VALUE_CHANGED, pane);
+    lv_obj_add_event_cb(av1_checkbox, codec_checkbox_cb, LV_EVENT_VALUE_CHANGED, pane);
     pref_desc_label(view, locstr("AV1 on this TV presents at 60 Hz even when the overlay shows 120. Use HEVC for 120 fps."), false);
 
     pane->hdr_checkbox = pref_checkbox(view, locstr("HDR"), &app_configuration->hdr, false);
@@ -252,6 +258,20 @@ static void hdr_state_update(basic_pane_t *pane) {
 
 static void hdr_state_update_cb(lv_event_t *e) {
     hdr_state_update(lv_event_get_user_data(e));
+}
+
+static void codec_checkbox_cb(lv_event_t *e) {
+    basic_pane_t *pane = lv_event_get_user_data(e);
+    lv_obj_t *target = lv_event_get_target(e);
+    /* Selecting AV1 must not leave HEVC advertised (host would pick HEVC). */
+    if (target == pane->av1_checkbox && app_configuration->av1 && app_configuration->hevc) {
+        app_configuration->hevc = false;
+        lv_obj_clear_state(pane->hevc_checkbox, LV_STATE_CHECKED);
+    } else if (target == pane->hevc_checkbox && app_configuration->hevc && app_configuration->av1) {
+        app_configuration->av1 = false;
+        lv_obj_clear_state(pane->av1_checkbox, LV_STATE_CHECKED);
+    }
+    hdr_state_update(pane);
 }
 
 static void module_changed_cb(lv_event_t *e) {

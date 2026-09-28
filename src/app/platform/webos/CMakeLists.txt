@@ -3,4 +3,6 @@ target_sources(moonlight-lib PRIVATE
         navkey_sdl_webos.c
         pbnjson_compat.c
         game_mode.c
-        stream_priority.c)
+        stream_priority.c
+        dualsense_usb.c
+        keyboard_evdev.c)

@@ -5,7 +5,7 @@ static int fps = 30;
 
 void test_basic() {
     const static int options[] = {30, 60, 90, 120, 144, 240, 0};
-    lv_obj_t *dropdown = pref_dropdown_fps(app.ui.container, options, 120, &fps);
+    lv_obj_t *dropdown = pref_dropdown_fps(app.ui.container, options, 120, &fps, NULL);
 
     lv_obj_set_width(dropdown, LV_PCT(100));
 
@@ -32,7 +32,7 @@ void test_basic() {
 
 void test_120fps() {
     const static int options[] = {30, 60, 90, 120, 144, 240, 0};
-    lv_obj_t *dropdown = pref_dropdown_fps(app.ui.container, options, 120, &fps);
+    lv_obj_t *dropdown = pref_dropdown_fps(app.ui.container, options, 120, &fps, NULL);
 
     lv_obj_set_width(dropdown, LV_PCT(100));
 
@@ -49,7 +49,7 @@ void test_120fps() {
 
 void test_100fps() {
     const static int options[] = {30, 60, 90, 120, 144, 240, 0};
-    lv_obj_t *dropdown = pref_dropdown_fps(app.ui.container, options, 100, &fps);
+    lv_obj_t *dropdown = pref_dropdown_fps(app.ui.container, options, 100, &fps, NULL);
 
     lv_obj_set_width(dropdown, LV_PCT(100));
 

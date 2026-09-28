@@ -11,6 +11,10 @@
 
 #include "vk.h"
 
+#if TARGET_WEBOS
+#include "platform/webos/keyboard_evdev.h"
+#endif
+
 enum KeyCombo {
     KeyComboQuit,
     KeyComboUngrabInput,
@@ -179,6 +183,24 @@ void stream_input_handle_key(stream_input_t *input, const SDL_KeyboardEvent *eve
 #if TARGET_WEBOS
     if (stream_input_webos_intercept_remote_keys(input, event, &keyCode)) {
         return;
+    }
+    /* USB keyboard is claimed via EVIOCGRAB; SDL still echoes those keys — drop them
+     * so F6/Home are not double-sent. Magic Remote uses WEBOS_* scancodes and stays. */
+    if (keyboard_evdev_busy(input->keyboard_evdev)) {
+        switch ((unsigned) event->keysym.scancode) {
+            case SDL_SCANCODE_WEBOS_EXIT:
+            case SDL_SCANCODE_WEBOS_HOME:
+            case SDL_SCANCODE_WEBOS_BACK:
+            case SDL_SCANCODE_WEBOS_CH_UP:
+            case SDL_SCANCODE_WEBOS_CH_DOWN:
+            case SDL_SCANCODE_WEBOS_RED:
+            case SDL_SCANCODE_WEBOS_GREEN:
+            case SDL_SCANCODE_WEBOS_YELLOW:
+            case SDL_SCANCODE_WEBOS_BLUE:
+                break;
+            default:
+                return;
+        }
     }
 #endif
     char modifiers;
@@ -460,10 +482,35 @@ void stream_input_handle_key(stream_input_t *input, const SDL_KeyboardEvent *eve
                 break;
             default:
                 if (!keyCode) {
-                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                                "Unhandled button event: scancode: %d, keycode: %d",
-                                event->keysym.scancode, event->keysym.sym);
-                    return;
+                    /* Some webOS keyboards deliver a usable keycode with a bad/unknown
+                     * scancode. Fall back to SDLK so F-keys / Home / Insert still stream. */
+                    switch (event->keysym.sym) {
+                        case SDLK_F1: keyCode = VK_F1; break;
+                        case SDLK_F2: keyCode = VK_F2; break;
+                        case SDLK_F3: keyCode = VK_F3; break;
+                        case SDLK_F4: keyCode = VK_F4; break;
+                        case SDLK_F5: keyCode = VK_F5; break;
+                        case SDLK_F6: keyCode = VK_F6; break;
+                        case SDLK_F7: keyCode = VK_F7; break;
+                        case SDLK_F8: keyCode = VK_F8; break;
+                        case SDLK_F9: keyCode = VK_F9; break;
+                        case SDLK_F10: keyCode = VK_F10; break;
+                        case SDLK_F11: keyCode = VK_F11; break;
+                        case SDLK_F12: keyCode = VK_F12; break;
+                        case SDLK_HOME: keyCode = VK_HOME; break;
+                        case SDLK_END: keyCode = VK_END; break;
+                        case SDLK_INSERT: keyCode = VK_INSERT; break;
+                        case SDLK_DELETE: keyCode = VK_DELETE; break;
+                        case SDLK_PAGEUP: keyCode = VK_PRIOR; break;
+                        case SDLK_PAGEDOWN: keyCode = VK_NEXT; break;
+                        case SDLK_PRINTSCREEN: keyCode = VK_SNAPSHOT; break;
+                        case SDLK_PAUSE: keyCode = VK_PAUSE; break;
+                        default:
+                            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                                        "Unhandled button event: scancode: %d, keycode: %d",
+                                        event->keysym.scancode, event->keysym.sym);
+                            return;
+                    }
                 }
         }
     }
@@ -491,6 +538,16 @@ void stream_input_handle_key(stream_input_t *input, const SDL_KeyboardEvent *eve
         if (event->keysym.scancode == SDL_SCANCODE_INTERNATIONAL1 ||
             event->keysym.scancode == SDL_SCANCODE_NONUSBACKSLASH) {
             keyFlags = SS_KBE_FLAG_NON_NORMALIZED;
+        }
+        /* Trace navigation / function keys — needed to tell "TV never delivered"
+         * from "host game ignored SendInput". */
+        if (keyCode == VK_HOME || keyCode == VK_INSERT || keyCode == VK_DELETE ||
+            keyCode == VK_END || keyCode == VK_PRIOR || keyCode == VK_NEXT ||
+            (keyCode >= VK_F1 && keyCode <= VK_F12)) {
+            commons_log_info("Input", "Keyboard %s vk=0x%02x scancode=%d sym=%d",
+                             event->state == SDL_PRESSED ? "DOWN" : "UP",
+                             (unsigned) keyCode, (int) event->keysym.scancode,
+                             (int) event->keysym.sym);
         }
         LiSendKeyboardEvent2(0x8000 | keyCode,
                              event->state == SDL_PRESSED ? KEY_ACTION_DOWN : KEY_ACTION_UP,
@@ -541,6 +598,13 @@ void stream_input_send_key_event(stream_input_t *input, short keyCode, bool keyD
             free(node);
             keydown_count--;
         }
+    }
+    /* Soft keyboard / programmatic path (FullKeyboard) — same Limelight packet as SDL keys. */
+    if (keyCode == VK_HOME || keyCode == VK_INSERT || keyCode == VK_DELETE ||
+        keyCode == VK_END || keyCode == VK_PRIOR || keyCode == VK_NEXT ||
+        (keyCode >= VK_F1 && keyCode <= VK_F12)) {
+        commons_log_info("Input", "SoftKbd %s vk=0x%02x mods=0x%02x",
+                         keyDown ? "DOWN" : "UP", (unsigned) keyCode, (unsigned) modifiers);
     }
     LiSendKeyboardEvent(0x8000 | keyCode,
                        keyDown ? KEY_ACTION_DOWN : KEY_ACTION_UP,

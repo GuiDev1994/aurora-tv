@@ -33,6 +33,8 @@
 /** Slices hint for pipeline decode while later slices still arrive (high bitrate / 120 Hz). */
 #define VDEC_STREAM_SLICES_MIN 4
 #define VDEC_STREAM_SLICES_MAX 8
+/** After first successful Feed, bail if the decoder stops accepting frames this long. */
+#define VDEC_DEAD_PIPELINE_MS 10000u
 
 static unsigned vdec_slices_for_stream(int width, int height, int fps) {
     if (fps <= 0) {
@@ -61,6 +63,9 @@ static int lastFrameNumber;
 /* Set when SS4S_PlayerVideoFeed returns NOT_READY. Consumed on the next
  * successful Feed: ask Limelight for one IDR so the decoder can resync. */
 static bool need_idr_on_resume = false;
+/** SDL_GetTicks of last FEED_OK; 0 until the first accepted frame (load prime). */
+static Uint32 last_feed_ok_ticks = 0;
+static bool dead_pipeline_tripped = false;
 static struct VIDEO_STATS vdec_temp_stats;
 static int vdec_stream_format = 0;
 static bool vdec_warned_near_buffer_limit;
@@ -95,17 +100,19 @@ DECODER_RENDERER_CALLBACKS ss4s_dec_callbacks = {
 void session_video_prepare_stream(void) {
     int caps = CAPABILITY_DIRECT_SUBMIT;
     const bool hevc = app_configuration != NULL && app_configuration->hevc;
-    unsigned slices = VDEC_STREAM_SLICES_MIN;
+    const bool sliced = hevc && app_configuration != NULL && app_configuration->hevc_sliced_frames;
+    unsigned slices = 1;
     if (hevc) {
-        if (app_configuration != NULL) {
+        caps |= CAPABILITY_REFERENCE_FRAME_INVALIDATION_HEVC;
+        if (sliced) {
             slices = vdec_slices_for_stream(app_configuration->stream.width,
                                             app_configuration->stream.height,
                                             app_configuration->stream.fps);
+            caps |= CAPABILITY_SLICES_PER_FRAME(slices);
         }
-        caps |= CAPABILITY_REFERENCE_FRAME_INVALIDATION_HEVC | CAPABILITY_SLICES_PER_FRAME(slices);
     }
-    commons_log_info("Session", "Video SDP caps: direct submit, %s, %u slices/frame",
-                     hevc ? "RFI" : "no RFI", slices);
+    commons_log_info("Session", "Video SDP caps: direct submit, %s, %u slices/frame%s",
+                     hevc ? "RFI" : "no RFI", slices, sliced ? "" : " (sliced frames off)");
     ss4s_dec_callbacks.capabilities = caps;
 }
 
@@ -146,6 +153,8 @@ int vdec_delegate_setup(int videoFormat, int width, int height, int redrawRate, 
     vdec_stream_info.format = video_format_name(videoFormat);
     lastFrameNumber = 0;
     need_idr_on_resume = false;
+    last_feed_ok_ticks = 0;
+    dead_pipeline_tripped = false;
     frames_since_idr = 0;
     vdec_stream_target_fps = redrawRate > 0 ? redrawRate : 60;
     vdec_warned_near_buffer_limit = false;
@@ -227,6 +236,7 @@ void vdec_delegate_cleanup(void) {
 
 static int vdec_finish_feed(SS4S_VideoFeedResult result, PDECODE_UNIT decodeUnit) {
     if (result == SS4S_VIDEO_FEED_OK) {
+        last_feed_ok_ticks = SDL_GetTicks();
         if (decodeUnit->frameType == FRAME_TYPE_IDR) {
             frames_since_idr = 0;
         } else {
@@ -262,6 +272,18 @@ static int vdec_finish_feed(SS4S_VideoFeedResult result, PDECODE_UNIT decodeUnit
         return DR_NEED_IDR;
     } else if (result == SS4S_VIDEO_FEED_NOT_READY) {
         need_idr_on_resume = true;
+        /* After the pipeline has accepted at least one frame, prolonged NOT_READY
+         * usually means the TV stole the NDL surface (settings overlay, etc.). */
+        if (!dead_pipeline_tripped && last_feed_ok_ticks != 0) {
+            const Uint32 now = SDL_GetTicks();
+            if (now - last_feed_ok_ticks >= VDEC_DEAD_PIPELINE_MS) {
+                dead_pipeline_tripped = true;
+                commons_log_error("Session",
+                                  "Video pipeline dead: no Feed OK for %u ms after prior success",
+                                  (unsigned) (now - last_feed_ok_ticks));
+                session_interrupt(session, false, STREAMING_INTERRUPT_WATCHDOG);
+            }
+        }
         return DR_OK;
     } else {
         commons_log_error("Session", "Video feed error %d", result);
