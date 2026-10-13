@@ -68,7 +68,37 @@ if [ "${DOCKER_CLEAN_BUILD:-0}" = "1" ]; then
     rm -rf "${CMAKE_BINARY_DIR}"
 fi
 export CI=1
-sed 's/\r$//' ./scripts/webos/easy_build.sh | bash -s -- -DCMAKE_BUILD_TYPE=Release
+
+# CMake cache variables aren't overwritten by a later -D once already configured,
+# so a persisted CMAKE_BINARY_DIR (see caching above) would silently keep
+# whichever WEBOS_APPINFO_ID/TITLE was used on the *first* build forever. Detect
+# when the requested value differs from what's cached and clear just
+# CMakeCache.txt (not the whole build dir) to force a reconfigure — compiled
+# object files are untouched, so this doesn't cost a full recompile.
+CACHE_FILE="${CMAKE_BINARY_DIR}/CMakeCache.txt"
+cache_value_differs() {
+    local var_name="$1" wanted="$2" cached
+    [ -f "${CACHE_FILE}" ] || return 1
+    cached=$(grep -m1 "^${var_name}:" "${CACHE_FILE}" | cut -d= -f2-)
+    [ "${cached}" != "${wanted}" ]
+}
+
+EXTRA_CMAKE_ARGS=()
+CACHE_STALE=0
+if [ -n "${WEBOS_APPINFO_ID:-}" ]; then
+    EXTRA_CMAKE_ARGS+=("-DWEBOS_APPINFO_ID=${WEBOS_APPINFO_ID}")
+    cache_value_differs "WEBOS_APPINFO_ID" "${WEBOS_APPINFO_ID}" && CACHE_STALE=1
+fi
+if [ -n "${WEBOS_APPINFO_TITLE:-}" ]; then
+    EXTRA_CMAKE_ARGS+=("-DWEBOS_APPINFO_TITLE=${WEBOS_APPINFO_TITLE}")
+    cache_value_differs "WEBOS_APPINFO_TITLE" "${WEBOS_APPINFO_TITLE}" && CACHE_STALE=1
+fi
+if [ "${CACHE_STALE}" = "1" ]; then
+    echo "App id/title override changed since the last cached build — clearing CMakeCache.txt to force a reconfigure."
+    rm -f "${CACHE_FILE}"
+fi
+
+sed 's/\r$//' ./scripts/webos/easy_build.sh | bash -s -- -DCMAKE_BUILD_TYPE=Release "${EXTRA_CMAKE_ARGS[@]}"
 
 mkdir -p dist
 find "${CMAKE_BINARY_DIR}" -maxdepth 3 -name '*.ipk' -exec cp -f {} dist/ \;
