@@ -6,6 +6,9 @@
 #include "app_error.h"
 #include "util/i18n.h"
 
+/* Rubylight lists it per device and warns there about client builds with a known problem. */
+#define AURORA_USER_AGENT "Aurora/" APP_VERSION " (" GAMECONTROLLERDB_PLATFORM ")"
+
 GS_CLIENT app_gs_client_new(app_t *app) {
     if (SDL_ThreadID() == app->main_thread_id) {
         commons_log_fatal("APP", "%s MUST BE called from worker thread!", __FUNCTION__);
@@ -34,6 +37,9 @@ GS_CLIENT app_gs_client_new(app_t *app) {
                         translatable("Please try uninstalling and reinstalling the app.\n\n"
                                      "Details: %s"), message);
         app_halt(app);
+    }
+    if (client != NULL) {
+        gs_set_user_agent(client, AURORA_USER_AGENT);
     }
     SDL_UnlockMutex(app->backend.gs_client_mutex);
     return client;

@@ -31,9 +31,28 @@ typedef struct _HTTP_DATA {
     size_t size;
 } HTTP_DATA;
 
+typedef struct {
+    /** Status of the answer; 0 when none arrived. */
+    long http_status;
+    /** Body bytes, and seconds from the end of the headers to the end of the body. */
+    size_t bytes;
+    double seconds;
+    /** Retry-After of the answer in seconds; 0 when absent. */
+    int retry_after;
+} HTTP_PROBE;
+
 HTTP *http_create(const char *keydir);
 
 int http_request(HTTP *http, char *url, HTTP_DATA * data);
+
+/**
+ * GETs url and counts its body without keeping it, for at most timeout_secs. A 200 answer that is
+ * not application/octet-stream, or longer than max_bytes, fails with GS_INVALID; any other status
+ * is GS_FAILED with probe->http_status set.
+ */
+int http_probe_download(HTTP *http, const char *url, size_t max_bytes, int timeout_secs, HTTP_PROBE *probe);
+
+void http_set_user_agent(HTTP *http, const char *user_agent);
 
 int http_post_json(HTTP *http, char *url, const char *payload, HTTP_DATA *data);
 
