@@ -341,6 +341,17 @@ int settings_optimal_bitrate(const SS4S_VideoCapabilities *capabilities, int w, 
     return BITRATE_300_MBPS;
 }
 
+int settings_bitrate_for_link(double link_mbps) {
+    double kbps = link_mbps * 800.0;
+    if (!(kbps >= SETTINGS_BITRATE_MIN_KBPS)) {
+        return SETTINGS_BITRATE_MIN_KBPS;
+    }
+    if (kbps >= SETTINGS_BITRATE_MAX_KBPS) {
+        return SETTINGS_BITRATE_MAX_KBPS;
+    }
+    return (int) kbps / 1000 * 1000;
+}
+
 
 bool audio_config_valid(int config) {
     return find_ch_idx_by_config(config) >= 0;

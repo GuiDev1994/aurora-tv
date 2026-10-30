@@ -113,6 +113,14 @@ bool pcmanager_pair(pcmanager_t *manager, const uuidstr_t *uuid, char *pin, pcma
 bool pcmanager_quitapp(pcmanager_t *manager, const uuidstr_t *uuid, pcmanager_callback_t callback, void *userdata);
 
 /**
+ * Time a download from a host that offers Rubylight's bandwidth test (bandwidthProbeVersion)
+ * @param probe filled before the callback runs; must stay valid until then
+ * @return false when the host does not offer it
+ */
+bool pcmanager_probe_bandwidth(pcmanager_t *manager, const uuidstr_t *uuid, GS_BANDWIDTH_PROBE *probe,
+                               pcmanager_callback_t callback, void *userdata);
+
+/**
  * Fetch host information
  * @param manager
  * @param uuid

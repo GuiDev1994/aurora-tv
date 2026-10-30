@@ -801,6 +801,10 @@ void gs_set_total_timeout(GS_CLIENT hnd, int timeout_secs) {
     http_set_total_timeout(hnd->http, timeout_secs);
 }
 
+void gs_set_user_agent(GS_CLIENT hnd, const char *user_agent) {
+    http_set_user_agent(hnd->http, user_agent);
+}
+
 int gs_get_status(GS_CLIENT hnd, PSERVER_DATA server, const char *address, uint16_t port, bool unsupported) {
     LiInitializeServerInformation(&server->serverInfo);
     server->serverInfo.address = address;
@@ -827,6 +831,7 @@ static int load_server_status(GS_CLIENT hnd, PSERVER_DATA server) {
         char *serverCodecModeSupportText = NULL;
         char *httpsPortText = NULL;
         char *externalPortText = NULL;
+        char *bandwidthProbeText = NULL;
 
         ret = GS_INVALID;
 
@@ -909,6 +914,10 @@ static int load_server_status(GS_CLIENT hnd, PSERVER_DATA server) {
             goto cleanup;
         }
 
+        if (xml_search(data->memory, data->size, "BandwidthProbeVersion", &bandwidthProbeText) != GS_OK) {
+            goto cleanup;
+        }
+
         if (xml_modelist(data->memory, data->size, &server->modes) != GS_OK) {
             goto cleanup;
         }
@@ -933,6 +942,7 @@ static int load_server_status(GS_CLIENT hnd, PSERVER_DATA server) {
         server->isGfe = strstr(stateText, "MJOLNIR") != NULL;
         server->httpsPort = httpsPortText == NULL ? 0 : (int) strtol(httpsPortText, NULL, 0);
         server->extPort = externalPortText == NULL ? 0 : (int) strtol(externalPortText, NULL, 0);
+        server->bandwidthProbeVersion = bandwidthProbeText == NULL ? 0 : (int) strtol(bandwidthProbeText, NULL, 10);
 
         if (strstr(stateText, "_SERVER_BUSY") == NULL) {
             // After GFE 2.8, current game remains set even after streaming
@@ -961,6 +971,10 @@ static int load_server_status(GS_CLIENT hnd, PSERVER_DATA server) {
 
         if (serverCodecModeSupportText != NULL) {
             free(serverCodecModeSupportText);
+        }
+
+        if (bandwidthProbeText != NULL) {
+            free(bandwidthProbeText);
         }
 
         i++;
@@ -1194,5 +1208,28 @@ int gs_http_wake(GS_CLIENT hnd, const char *url) {
     http_set_timeout(hnd->http, 10);
     int ret = http_request(hnd->http, (char *) url, data);
     http_data_free(data);
+    return ret;
+}
+
+int gs_probe_bandwidth(GS_CLIENT hnd, const SERVER_DATA *server, GS_BANDWIDTH_PROBE *probe) {
+    if (!hnd || !server || !probe) {
+        return GS_INVALID;
+    }
+    memset(probe, 0, sizeof(*probe));
+    char url[4096];
+    if (!construct_url(hnd, url, sizeof(url), true, server->serverInfo.address, server_port(server, true),
+                       "bandwidth-probe", "bytes=%d", GS_BANDWIDTH_PROBE_BYTES)) {
+        return GS_FAILED;
+    }
+    HTTP_PROBE result;
+    int ret = http_probe_download(hnd->http, url, GS_BANDWIDTH_PROBE_BYTES, 10, &result);
+    if (ret == GS_OK) {
+        probe->mbps = (double) result.bytes * 8.0 / result.seconds / 1e6;
+        commons_log_info("GameStream", "Bandwidth probe: %zu bytes in %.3f s, %.1f Mbit/s", result.bytes,
+                         result.seconds, probe->mbps);
+    } else if (result.http_status != 0 && result.http_status != 200) {
+        probe->refused_status = (int) result.http_status;
+        probe->retry_after_secs = result.retry_after;
+    }
     return ret;
 }
