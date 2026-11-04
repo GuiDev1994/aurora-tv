@@ -45,11 +45,15 @@ static void pointer_gesture_send_position(const stream_input_t *input, int x, in
 static void pointer_gesture_begin_drag(stream_input_t *input, int x, int y) {
     input->pointerGestureDragging = true;
     /* Press where the button went down, not where the drag was detected,
-     * so a drag starts on the window edge or item the user pressed. */
+     * so a drag starts on the window edge or item the user pressed.
+     * Absolute moves are coalesced until the input thread sends them, so
+     * moving to (x, y) here would overwrite the start position before the
+     * press goes out. The next motion event carries the drag on. */
+    (void) x;
+    (void) y;
     pointer_gesture_send_position(input, input->pointerGestureStartX, input->pointerGestureStartY);
     LiSendMouseButtonEvent(BUTTON_ACTION_PRESS, BUTTON_LEFT);
     input->pointerGestureLeftDown = true;
-    pointer_gesture_send_position(input, x, y);
 }
 
 static int pointer_gesture_distance_sq(int x0, int y0, int x1, int y1) {
