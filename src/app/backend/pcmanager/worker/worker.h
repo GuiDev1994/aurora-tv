@@ -8,6 +8,8 @@ typedef struct worker_context_t {
     pcmanager_t *manager;
     uuidstr_t uuid;
     void *arg1;
+    /* Caller-owned result, valid until the callback runs. */
+    void *out;
 
     int result;
     char *error;
@@ -21,6 +23,8 @@ typedef int (*worker_action)(worker_context_t *context);
 int worker_pairing(worker_context_t *context);
 
 int worker_quit_app(worker_context_t *context);
+
+int worker_probe_bandwidth(worker_context_t *context);
 
 int worker_wol(worker_context_t *context);
 

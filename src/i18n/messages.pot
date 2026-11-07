@@ -469,6 +469,57 @@ msgstr ""
 msgid "HTTP wake URL"
 msgstr ""
 
+#: src/app/ui/launcher/server.context_menu.c:113
+msgid "Test connection speed"
+msgstr ""
+
+#: src/app/ui/launcher/server.context_menu.c:202
+msgid "Testing connection speed..."
+msgstr ""
+
+#: src/app/ui/launcher/server.context_menu.c:216
+msgid "Keep"
+msgstr ""
+
+#: src/app/ui/launcher/server.context_menu.c:216
+msgid "Lower bitrate"
+msgstr ""
+
+#: src/app/ui/launcher/server.context_menu.c:228
+msgid "Stop streaming from this PC before testing the connection speed."
+msgstr ""
+
+#: src/app/ui/launcher/server.context_menu.c:231
+#, c-format
+msgid "Test again in %d s."
+msgstr ""
+
+#: src/app/ui/launcher/server.context_menu.c:233
+#, c-format
+msgid ""
+"Connection speed test failed.\n"
+"\n"
+"Details: %s"
+msgstr ""
+
+#: src/app/ui/launcher/server.context_menu.c:236
+#, c-format
+msgid ""
+"Connection speed: %d Mbps\n"
+"Bitrate: %d Mbps\n"
+"\n"
+"This connection may not carry that bitrate. Suggested: %d Mbps"
+msgstr ""
+
+#: src/app/ui/launcher/server.context_menu.c:240
+#, c-format
+msgid ""
+"Connection speed: %d Mbps\n"
+"Bitrate: %d Mbps\n"
+"\n"
+"This connection can carry that bitrate."
+msgstr ""
+
 #: src/app/ui/launcher/server.popup.c:362
 msgid "Close"
 msgstr ""

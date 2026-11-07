@@ -70,6 +70,18 @@ bool pcmanager_quitapp(pcmanager_t *manager, const uuidstr_t *uuid, pcmanager_ca
     return true;
 }
 
+bool pcmanager_probe_bandwidth(pcmanager_t *manager, const uuidstr_t *uuid, GS_BANDWIDTH_PROBE *probe,
+                               pcmanager_callback_t callback, void *userdata) {
+    const pclist_t *node = pcmanager_node(manager, uuid);
+    if (node == NULL || node->server == NULL || node->server->bandwidthProbeVersion <= 0) {
+        return false;
+    }
+    worker_context_t *ctx = worker_context_new(manager, uuid, callback, userdata);
+    ctx->out = probe;
+    pcmanager_worker_queue(manager, worker_probe_bandwidth, ctx);
+    return true;
+}
+
 void pcmanager_request_update(pcmanager_t *manager, const uuidstr_t *uuid, pcmanager_callback_t callback,
                               void *userdata) {
     commons_log_info("PcManager", "Requesting update for %s", (const char *) uuid);

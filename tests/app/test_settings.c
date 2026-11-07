@@ -286,6 +286,17 @@ void testAuroraIniWinsOverLegacyMoonlightIni() {
     free(legacy);
 }
 
+void testBitrateForLink() {
+    // 80% of the link, rounded down to the slider's whole Mbps.
+    TEST_ASSERT_EQUAL_INT(80000, settings_bitrate_for_link(100.0));
+    TEST_ASSERT_EQUAL_INT(37000, settings_bitrate_for_link(47.3));
+    // Within the slider's range, also for a probe that measured nothing.
+    TEST_ASSERT_EQUAL_INT(SETTINGS_BITRATE_MIN_KBPS, settings_bitrate_for_link(3.0));
+    TEST_ASSERT_EQUAL_INT(SETTINGS_BITRATE_MIN_KBPS, settings_bitrate_for_link(0.0));
+    TEST_ASSERT_EQUAL_INT(SETTINGS_BITRATE_MIN_KBPS, settings_bitrate_for_link(-1.0));
+    TEST_ASSERT_EQUAL_INT(SETTINGS_BITRATE_MAX_KBPS, settings_bitrate_for_link(940.0));
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(testReadINI);
@@ -300,5 +311,6 @@ int main() {
     RUN_TEST(testLauncherGridRowsDefaultRoundTripAndRange);
     RUN_TEST(testMigratesLegacyMoonlightIni);
     RUN_TEST(testAuroraIniWinsOverLegacyMoonlightIni);
+    RUN_TEST(testBitrateForLink);
     return UNITY_END();
 }

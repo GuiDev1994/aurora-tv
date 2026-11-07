@@ -10,6 +10,7 @@ target_sources(moonlight-lib PRIVATE
         pcmanager/worker/request.c
         pcmanager/worker/pairing.c
         pcmanager/worker/quit_app.c
+        pcmanager/worker/bandwidth.c
         pcmanager/worker/wol.c
         pcmanager/worker/manual_add.c
         pcmanager/worker/update.c

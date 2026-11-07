@@ -7,6 +7,8 @@
 #include "backend/types.h"
 #include "libgamestream/client.h"
 
+#include "errors.h"
+#include "ui/common/progress_dialog.h"
 #include "util/i18n.h"
 #include "lvgl/util/lv_app_utils.h"
 #include "util/nullable.h"
@@ -20,6 +22,13 @@ typedef struct context_menu_t {
     uuidstr_t uuid;
     bool single_clicked;
 } context_menu_t;
+
+typedef struct bandwidth_test_t {
+    GS_BANDWIDTH_PROBE probe;
+    lv_obj_t *progress;
+    /* The bitrate "Lower bitrate" sets; 0 when the dialog doesn't offer it. */
+    int lower_to_kbps;
+} bandwidth_test_t;
 
 static void menu_ctor(lv_fragment_t *self, void *arg);
 
@@ -40,6 +49,14 @@ static void show_hidden_apps(const pclist_t *node);
 static void forget_host(const pclist_t *node);
 
 static void configure_wake(const pclist_t *node);
+
+static void test_bandwidth(const pclist_t *node);
+
+static void bandwidth_test_cb(int result, const char *error, const uuidstr_t *uuid, void *userdata);
+
+static void bandwidth_result_cb(lv_event_t *e);
+
+static void bandwidth_result_free_cb(lv_event_t *e);
 
 static void wake_settings_cb(lv_event_t *e);
 
@@ -92,6 +109,12 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *parent) {
     lv_obj_add_flag(wake_btn, LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_set_user_data(wake_btn, configure_wake);
 
+    if (node->state.code == SERVER_STATE_AVAILABLE && node->server->bandwidthProbeVersion > 0) {
+        lv_obj_t *bandwidth_btn = lv_list_add_btn(content, NULL, locstr("Test connection speed"));
+        lv_obj_add_flag(bandwidth_btn, LV_OBJ_FLAG_EVENT_BUBBLE);
+        lv_obj_set_user_data(bandwidth_btn, test_bandwidth);
+    }
+
     if (pcmanager_can_forget(pcmanager, &controller->uuid)) {
         lv_obj_t *forget_btn = lv_list_add_btn(content, NULL, locstr("Forget"));
         lv_obj_add_flag(forget_btn, LV_OBJ_FLAG_EVENT_BUBBLE);
@@ -136,6 +159,8 @@ static void context_menu_click_cb(lv_event_t *e) {
         show_hidden_apps(node);
     } else if (target_userdata == configure_wake) {
         configure_wake(node);
+    } else if (target_userdata == test_bandwidth) {
+        test_bandwidth(node);
     }
 }
 
@@ -170,6 +195,69 @@ static void forget_host(const pclist_t *node) {
         launcher_fragment_t *launcher = launcher_instance();
         launcher_select_server(launcher, NULL);
     }
+}
+
+static void test_bandwidth(const pclist_t *node) {
+    bandwidth_test_t *test = SDL_calloc(1, sizeof(bandwidth_test_t));
+    test->progress = progress_dialog_create(locstr("Testing connection speed..."));
+    if (!pcmanager_probe_bandwidth(pcmanager, &node->id, &test->probe, bandwidth_test_cb, test)) {
+        lv_msgbox_close(test->progress);
+        SDL_free(test);
+    }
+}
+
+static void bandwidth_test_cb(int result, const char *error, const uuidstr_t *uuid, void *userdata) {
+    bandwidth_test_t *test = userdata;
+    lv_msgbox_close(test->progress);
+    test->progress = NULL;
+    const pclist_t *node = pcmanager_node(pcmanager, uuid);
+    const char *title = node != NULL && node->server != NULL ? node->server->hostname : NULL;
+    static const char *ok_btns[] = {translatable("OK"), ""};
+    static const char *lower_btns[] = {translatable("Keep"), translatable("Lower bitrate"), ""};
+
+    int current_kbps = app_configuration->stream.bitrate;
+    int link_kbps = settings_bitrate_for_link(test->probe.mbps);
+    if (result == GS_OK && link_kbps < current_kbps) {
+        test->lower_to_kbps = link_kbps;
+    }
+    lv_obj_t *mbox = lv_msgbox_create_i18n(NULL, title, "placeholder", test->lower_to_kbps > 0 ? lower_btns : ok_btns,
+                                           false);
+    lv_obj_t *message = lv_msgbox_get_text(mbox);
+    int mbps = (int) (test->probe.mbps + 0.5);
+    if (result != GS_OK && test->probe.refused_status == 409) {
+        lv_label_set_text(message, locstr("Stop streaming from this PC before testing the connection speed."));
+    } else if (result != GS_OK && test->probe.refused_status == 429) {
+        int wait_secs = test->probe.retry_after_secs > 0 ? test->probe.retry_after_secs : 5;
+        lv_label_set_text_fmt(message, locstr("Test again in %d s."), wait_secs);
+    } else if (result != GS_OK) {
+        lv_label_set_text_fmt(message, locstr("Connection speed test failed.\n\nDetails: %s"),
+                              error != NULL ? error : "");
+    } else if (test->lower_to_kbps > 0) {
+        lv_label_set_text_fmt(message, locstr("Connection speed: %d Mbps\nBitrate: %d Mbps\n\n"
+                                              "This connection may not carry that bitrate. Suggested: %d Mbps"),
+                              mbps, current_kbps / 1000, test->lower_to_kbps / 1000);
+    } else {
+        lv_label_set_text_fmt(message, locstr("Connection speed: %d Mbps\nBitrate: %d Mbps\n\n"
+                                              "This connection can carry that bitrate."),
+                              mbps, current_kbps / 1000);
+    }
+    lv_obj_add_event_cb(mbox, bandwidth_result_cb, LV_EVENT_VALUE_CHANGED, test);
+    lv_obj_add_event_cb(mbox, bandwidth_result_free_cb, LV_EVENT_DELETE, test);
+    lv_obj_center(mbox);
+}
+
+static void bandwidth_result_cb(lv_event_t *e) {
+    lv_obj_t *mbox = lv_event_get_current_target(e);
+    bandwidth_test_t *test = lv_event_get_user_data(e);
+    if (test->lower_to_kbps > 0 && lv_msgbox_get_active_btn(mbox) == 1) {
+        app_configuration->stream.bitrate = test->lower_to_kbps;
+        settings_save(app_configuration);
+    }
+    lv_msgbox_close_async(mbox);
+}
+
+static void bandwidth_result_free_cb(lv_event_t *e) {
+    SDL_free(lv_event_get_user_data(e));
 }
 
 typedef struct wake_settings_ctx_t {

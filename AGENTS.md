@@ -282,3 +282,10 @@ bitrate. Do not "fix" it by changing HEVC. For 120 fps, use HEVC.
   (Sunshine-family hosts only). `stream/link_hint.c` fills them from sysfs. Rebasing the
   fork onto upstream must keep them. PyroWave itself is unusable on webOS (no Vulkan);
   the link hint applies to H.264/HEVC/AV1 pacing too and does not request it.
+- Rubylight's bandwidth test lives in libgamestream: serverinfo's `BandwidthProbeVersion`
+  gates `gs_probe_bandwidth` (`GET /bandwidth-probe`, 4 MiB, the host stops at 3 s, 409
+  while a stream runs, 429 with `Retry-After`). The host menu's "Test connection speed"
+  only offers to lower the bitrate to 80% of the link, never to raise it: Rubylight found
+  Nightjar's automatic start-bitrate test worse on a shaped link. `app_gs_client_new` sets
+  `User-Agent: Aurora/<version> (<platform>)`, which Rubylight lists per device; a request
+  without one clears it there, so new `GS_CLIENT`s must keep going through that function.

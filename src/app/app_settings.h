@@ -199,4 +199,12 @@ void settings_clear(app_settings_t *config);
 
 int settings_optimal_bitrate(const SS4S_VideoCapabilities *capabilities, int w, int h, int fps);
 
+/* The Bitrate slider's range, in kbps. */
+#define SETTINGS_BITRATE_MIN_KBPS 5000
+#define SETTINGS_BITRATE_MAX_KBPS 400000
+
+/** The bitrate a link measured at link_mbps carries: 80% of it (Nightjar's start share), in whole Mbps,
+ *  within the Bitrate slider's range. */
+int settings_bitrate_for_link(double link_mbps);
+
 bool audio_config_valid(int config);

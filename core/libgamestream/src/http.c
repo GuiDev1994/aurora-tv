@@ -23,9 +23,12 @@
 #include "logging.h"
 
 #include <string.h>
+#include <strings.h>
 #include <curl/curl.h>
 #include <pthread.h>
+#include <stdbool.h>
 #include <stdlib.h>
+#include <time.h>
 #include <assert.h>
 
 #ifdef __WIN32
@@ -166,6 +169,94 @@ int http_post_json(HTTP *http, char *url, const char *payload, HTTP_DATA *data) 
     finish:
     pthread_mutex_unlock(&http->mutex);
     return ret;
+}
+
+typedef struct {
+    HTTP_PROBE *probe;
+    size_t max_bytes;
+    bool too_long;
+    bool headers_done;
+    struct timespec body_start;
+} probe_state_t;
+
+static size_t probe_header_fn(char *buffer, size_t size, size_t nitems, void *userp) {
+    probe_state_t *state = userp;
+    size_t len = size * nitems;
+    if (len > 0 && len <= 2 && (buffer[0] == '\r' || buffer[0] == '\n')) {
+        clock_gettime(CLOCK_MONOTONIC, &state->body_start);
+        state->headers_done = true;
+    } else if (len > 12 && strncasecmp(buffer, "Retry-After:", 12) == 0) {
+        state->probe->retry_after = (int) strtol(buffer + 12, NULL, 10);
+    }
+    return len;
+}
+
+static size_t probe_write_fn(void *contents, size_t size, size_t nmemb, void *userp) {
+    (void) contents;
+    probe_state_t *state = userp;
+    size_t len = size * nmemb;
+    if (state->probe->bytes + len > state->max_bytes) {
+        state->too_long = true;
+        return 0;
+    }
+    state->probe->bytes += len;
+    return len;
+}
+
+int http_probe_download(HTTP *http, const char *url, size_t max_bytes, int timeout_secs, HTTP_PROBE *probe) {
+    assert(http != NULL);
+    assert(probe != NULL);
+    memset(probe, 0, sizeof(*probe));
+    // A handle of its own, so other requests on this client don't wait seconds for the body.
+    pthread_mutex_lock(&http->mutex);
+    CURL *curl = curl_easy_duphandle(http->curl);
+    pthread_mutex_unlock(&http->mutex);
+    if (curl == NULL) {
+        return gs_set_error(GS_OUT_OF_MEMORY, "Failed to create cURL instance");
+    }
+    probe_state_t state = {.probe = probe, .max_bytes = max_bytes};
+    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+    curl_easy_setopt(curl, CURLOPT_FAILONERROR, 0L);
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, (long) timeout_secs);
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, probe_header_fn);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, &state);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, probe_write_fn);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &state);
+
+    commons_log_debug("GameStream", "Probe %s", url);
+    CURLcode res = curl_easy_perform(curl);
+    struct timespec end;
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &probe->http_status);
+    char *content_type = NULL;
+    curl_easy_getinfo(curl, CURLINFO_CONTENT_TYPE, &content_type);
+    bool octet_stream = content_type != NULL && strncasecmp(content_type, "application/octet-stream", 24) == 0;
+
+    int ret;
+    if (state.too_long) {
+        ret = gs_set_error(GS_INVALID, "Probe body is longer than %zu bytes", max_bytes);
+    } else if (res != CURLE_OK) {
+        ret = gs_set_error(GS_IO_ERROR, "cURL error: %s", curl_easy_strerror(res));
+    } else if (probe->http_status != 200) {
+        ret = gs_set_error(GS_FAILED, "Probe refused with HTTP %ld", probe->http_status);
+    } else if (!octet_stream || probe->bytes == 0 || !state.headers_done) {
+        ret = gs_set_error(GS_INVALID, "Probe answered no application/octet-stream body");
+    } else {
+        double seconds = (double) (end.tv_sec - state.body_start.tv_sec) +
+                         (double) (end.tv_nsec - state.body_start.tv_nsec) / 1e9;
+        probe->seconds = seconds > 1e-6 ? seconds : 1e-6;
+        ret = GS_OK;
+    }
+    curl_easy_cleanup(curl);
+    return ret;
+}
+
+void http_set_user_agent(HTTP *http, const char *user_agent) {
+    assert(http != NULL);
+    pthread_mutex_lock(&http->mutex);
+    curl_easy_setopt(http->curl, CURLOPT_USERAGENT, user_agent);
+    pthread_mutex_unlock(&http->mutex);
 }
 
 void http_destroy(HTTP *http) {

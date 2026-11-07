@@ -51,6 +51,8 @@ typedef struct _SERVER_DATA {
     const char *gsVersion;
     int wake_method;
     char *wake_url;
+    /** BandwidthProbeVersion (Rubylight 3.0+): the host serves gs_probe_bandwidth. 0 when absent. */
+    int bandwidthProbeVersion;
     PDISPLAY_MODE modes;
     SERVER_INFORMATION serverInfo;
 } SERVER_DATA, *PSERVER_DATA;
@@ -68,6 +70,9 @@ void gs_set_timeout(GS_CLIENT hnd, int timeout_secs);
 /* Whole-transfer ceiling on every request made through this client (see
  * http_set_total_timeout); 0 = no ceiling (curl default). */
 void gs_set_total_timeout(GS_CLIENT hnd, int timeout_secs);
+
+/* User-Agent of every request made through this client. Rubylight lists it per device. */
+void gs_set_user_agent(GS_CLIENT hnd, const char *user_agent);
 
 int gs_get_status(GS_CLIENT hnd, PSERVER_DATA server, const char *address, uint16_t port, bool unsupported);
 
@@ -125,3 +130,19 @@ int gs_report_abr_feedback(GS_CLIENT hnd, const SERVER_DATA *server, const GS_AB
                            GS_ABR_ACTION *action);
 
 int gs_http_wake(GS_CLIENT hnd, const char *url);
+
+/* The largest body GET /bandwidth-probe serves. */
+#define GS_BANDWIDTH_PROBE_BYTES (4 * 1024 * 1024)
+
+typedef struct {
+    double mbps;
+    /** HTTP status of a refusal (409 while a stream runs or starts, 429 too soon), else 0. */
+    int refused_status;
+    /** Seconds a 429 asks to wait; 0 when absent. */
+    int retry_after_secs;
+} GS_BANDWIDTH_PROBE;
+
+/* Times GS_BANDWIDTH_PROBE_BYTES of GET /bandwidth-probe from a host with bandwidthProbeVersion,
+ * from its headers to the end of its body. The host stops after 3 s, so a short body on a slow
+ * link is still a measurement. A refusal is GS_FAILED with refused_status set. */
+int gs_probe_bandwidth(GS_CLIENT hnd, const SERVER_DATA *server, GS_BANDWIDTH_PROBE *probe);

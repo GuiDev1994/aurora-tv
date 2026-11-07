@@ -33,6 +33,7 @@ PSERVER_DATA serverdata_clone(const SERVER_DATA *src) {
     server->gsVersion = strdup_nullable(src->gsVersion);
     server->wake_method = src->wake_method;
     server->wake_url = strdup_nullable(src->wake_url);
+    server->bandwidthProbeVersion = src->bandwidthProbeVersion;
     server->modes = display_mode_clone(src->modes);
     server->serverInfo.address = strdup_nullable(src->serverInfo.address);
     server->serverInfo.rtspSessionUrl = strdup_nullable(src->serverInfo.rtspSessionUrl);
