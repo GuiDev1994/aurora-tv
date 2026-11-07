@@ -155,6 +155,7 @@ int session_worker(session_t *session) {
         commons_log_info("Session", "Link to host: interface not found, no link hint");
     }
 
+    session_audio_prepare_callbacks();
     int startResult = LiStartConnection(&server->serverInfo, &session->config.stream,
                                         session_connection_callbacks_prepare(session),
                                         &ss4s_dec_callbacks, &ss4s_aud_callbacks, session, 0, session, 0);

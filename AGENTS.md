@@ -90,8 +90,10 @@ Cross-cutting mechanics worth knowing before touching anything:
   `PltGetMicroseconds()`. Re-verify on every moonlight-common-c bump.
 - **Direct submit**: video sets `CAPABILITY_DIRECT_SUBMIT`, so `submitDecodeUnit` runs on
   the RTP receive thread. Anything that blocks in the feed path stops the socket from
-  being drained. Audio deliberately does *not* set it on webOS, because the NDL Opus 5.1
-  transcode is expensive enough to starve reception (issue #66).
+  being drained. Audio sets it too on webOS except in "5.1 audio mode" PCM, which decodes
+  Opus on the client (#66); `session_audio_prepare_callbacks()` picks it before
+  `LiStartConnection`. v1.2.3–v1.3.3 had it off for every mode: Limelight then queues audio in a
+  30-packet LBQ and flushes all 150 ms when it overflows, and #108 reports cuts from exactly v1.2.3.
 - **Game grid** (`launcher/apps.controller.c`): `lv_gridview` cannot change its column count
   in place (`clear_rows()` skips the last row and the focused item), and `appitem_view()`
   sizes tiles only once. So when the "Game grid" setting (`launcher_grid_rows`) changes,
@@ -212,6 +214,11 @@ Do not make PCM the default.
 the previous one (Limelight delivers them in pairs). `audio_sequential_pts` (default on,
 `SS4S_NDL_AUDIO_SEQUENTIAL_PTS`) steps each stamp one frame past the last and sheds packets
 more than 4 frames ahead, so the stamp cannot ratchet. Watch `shed` in "Audio feed 1s".
+
+**7.1 is not possible on webOS** (checked 2026-11 against punktfunk/client-webos, measured on a
+G5 → Denon AVR): NDL's Opus plane decodes stereo or this one 5.1 layout only, NDL PCM 6ch plays
+but the AVR reports 2.0, and SDL audio is folded to 2ch by webOS. `ndl-webos5` advertising
+`maxChannels = 6` is correct; don't raise it. No other moonlight-tv/ss4s fork changes audio.
 
 Do **not** send Sunshine `surround-params` a second time on top of `642014523`.
 Do not "fix" 5.1 by deleting `surroundParams` again.

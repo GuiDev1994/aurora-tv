@@ -217,13 +217,22 @@ AUDIO_RENDERER_CALLBACKS ss4s_aud_callbacks = {
         .init = aud_init,
         .cleanup = aud_cleanup,
         .decodeAndPlaySample = aud_feed,
-#if TARGET_WEBOS
-        /* No direct submit: the webOS backend may transcode surround Opus, and
-         * running that on the RTP receive thread stalls socket reads long enough
-         * to lose audio packets at 4K bitrates (#59, #66). Limelight's own
-         * decoder thread absorbs the cost. */
-        .capabilities = 0,
-#else
         .capabilities = CAPABILITY_DIRECT_SUBMIT,
-#endif
 };
+
+void session_audio_prepare_callbacks(void) {
+#if TARGET_WEBOS
+    /*
+     * Opus passthrough (the default) hands each packet to NDL as is, so it runs on the RTP
+     * receive thread like upstream moonlight-tv and punktfunk do. Without direct submit Limelight
+     * queues audio in a 30-packet (150 ms) LBQ and, when the decoder thread falls behind (it
+     * waits on the NDL lock the 4K video feed also holds), flushes the WHOLE queue: a 150 ms cut.
+     * Direct submit was turned off in v1.2.3, the first version #108 reports cuts on.
+     *
+     * Only PCM mode decodes Opus here; keep that off the receive thread (#59, #66).
+     */
+    bool client_decode = app_configuration != NULL && app_configuration->surround_51_mode == SURROUND_51_PCM;
+    ss4s_aud_callbacks.capabilities = client_decode ? 0 : CAPABILITY_DIRECT_SUBMIT;
+    commons_log_info("Session", "Audio feed on %s", client_decode ? "Limelight decoder thread" : "receive thread");
+#endif
+}
