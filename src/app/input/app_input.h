@@ -65,6 +65,9 @@ typedef struct app_input_t {
     app_gamepad_state_t gamepads[16];
     size_t gamepads_count;
     short activeGamepadMask;
+    /* What the stream asked for; held back while the window is unfocused. */
+    bool mouse_grab;
+    bool focused;
 } app_input_t;
 
 
@@ -73,3 +76,6 @@ void app_input_init(app_input_t *input, app_t *app);
 void app_input_deinit(app_input_t *input);
 
 void app_input_handle_event(app_input_t *input, const SDL_Event *event);
+
+/** Releases the stream's mouse grab while the window is unfocused and restores it after. */
+void app_input_set_focused(app_input_t *input, bool focused);

@@ -207,6 +207,7 @@ static int app_event_filter(void *userdata, SDL_Event *event) {
             switch (event->window.event) {
                 case SDL_WINDOWEVENT_FOCUS_GAINED:
                     app->focused = true;
+                    app_input_set_focused(&app->input, true);
                     break;
                 case SDL_WINDOWEVENT_FOCUS_LOST:
                     commons_log_debug("SDL", "Window event SDL_WINDOWEVENT_FOCUS_LOST");
@@ -217,6 +218,7 @@ static int app_event_filter(void *userdata, SDL_Event *event) {
                     }
 #endif
                     app->focused = false;
+                    app_input_set_focused(&app->input, false);
                     break;
                 case SDL_WINDOWEVENT_SIZE_CHANGED:
                     lv_app_display_resize(lv_disp_get_default(), event->window.data1, event->window.data2);
