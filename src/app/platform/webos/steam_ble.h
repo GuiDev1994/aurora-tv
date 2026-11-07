@@ -6,10 +6,13 @@
  * webOS never does an ATT MTU exchange with the controller, so the MTU stays at 23 and the
  * controller sends no input at all: it pairs and shows as connected, but even the trackpad
  * mouse stays silent. A background thread watches for a connected Steam Controller and
- * asks com.webos.service.blegatt for a larger MTU (client/connect, then client/requestMtu),
- * again after every reconnect. No root needed.
+ * asks com.webos.service.blegatt for a larger MTU (client/connect, then client/requestMtu
+ * once the connect subscription reports the link up), again after every reconnect. The calls
+ * go through luna-send-pub, since apps in developer mode may not call requestMtu themselves.
+ * A controller another app already has a GATT client for is left alone. No root needed.
  *
- * The GATT client stays connected while the controller is, and client/disconnect is called
+ * The client/connect subscription has to stay open: ending it ends the GATT client. It stays
+ * open while the controller is connected, and client/disconnect is called
  * when it goes away or the app exits: without it, the next client/connect for that address
  * fails with "SubscriptionInfo is already existed" until the TV reboots.
  */

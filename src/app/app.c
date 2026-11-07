@@ -85,6 +85,9 @@ int app_init(app_t *app, app_settings_loader *settings_loader, int argc, char *a
 #define SDL_HINT_WEBOS_CURSOR_FREQUENCY "SDL_WEBOS_CURSOR_FREQUENCY"
 #define SDL_HINT_WEBOS_CURSOR_CALIBRATION_DISABLE "SDL_WEBOS_CURSOR_CALIBRATION_DISABLE"
 #endif
+#ifndef SDL_HINT_WEBOS_HIDAPI_IGNORE_BLUETOOTH_DEVICES
+#define SDL_HINT_WEBOS_HIDAPI_IGNORE_BLUETOOTH_DEVICES "SDL_WEBOS_HIDAPI_IGNORE_BLUETOOTH_DEVICES"
+#endif
     SDL_SetHint(SDL_HINT_WEBOS_ACCESS_POLICY_KEYS_BACK, "true");
     SDL_SetHint(SDL_HINT_WEBOS_ACCESS_POLICY_KEYS_EXIT, "true");
     /* Always capture Home (and Win, same policy class) so the TV does not steal them
@@ -97,6 +100,11 @@ int app_init(app_t *app, app_settings_loader *settings_loader, int argc, char *a
     /* Do not ignore Nintendo VID 0x057e over Bluetooth. That wildcard hid every
      * Switch-mode pad (including 8BitDo) from SDL HIDAPI and left rumble on
      * hid-nintendo, which never finishes on those clones (PR #78). */
+    /* The Bluetooth LE Steam Controller (28de:1303): its feature report requests get no
+     * answer on webOS, and SDL's Steam driver sat in HIDIOCGFEATURE on the main thread
+     * for minutes, freezing the UI (issue #81). It is only a mouse and keyboard here
+     * anyway; over USB or its Puck it is a different product id and keeps SDL's driver. */
+    SDL_SetHint(SDL_HINT_WEBOS_HIDAPI_IGNORE_BLUETOOTH_DEVICES, "0x28de/0x1303");
     /* NDL has to be initialized before SDL takes the video plane. On webOS 6
      * (C1) DirectMediaInit fails once SDL video is up, and a second call from
      * the audio and video drivers segfaults inside libNDL. webOS 11 (C5)
