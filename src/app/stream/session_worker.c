@@ -27,7 +27,7 @@
 
 #if TARGET_WEBOS
 /* Installer greps this string out of the ELF. */
-static const char aurora_build_tag[] __attribute__((used)) = "aurora-v1.3.3";
+static const char aurora_build_tag[] __attribute__((used)) = "aurora-v1.3.4";
 #endif
 
 int session_worker(session_t *session) {
