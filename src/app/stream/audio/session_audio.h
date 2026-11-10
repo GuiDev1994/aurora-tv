@@ -21,3 +21,6 @@
 
 extern AUDIO_RENDERER_CALLBACKS ss4s_aud_callbacks;
 
+/** Call before LiStartConnection: Limelight copies the callbacks, capabilities included. */
+void session_audio_prepare_callbacks(void);
+

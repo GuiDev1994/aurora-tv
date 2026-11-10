@@ -22,6 +22,8 @@ void app_input_init(app_input_t *input, app_t *app) {
         input->gamepads[i].gs_id = -1;
     }
     input->activeGamepadMask = 0;
+    input->mouse_grab = false;
+    input->focused = true;
     input->blank_cursor_surface = SDL_CreateRGBSurface(0, 16, 16, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
     input->blank_cursor_surface->userdata = SDL_CreateColorCursor(input->blank_cursor_surface, 0, 0);
     if (input->blank_cursor_surface->userdata == NULL) {
@@ -45,7 +47,7 @@ void app_input_deinit(app_input_t *input) {
     SDL_QuitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER);
 }
 
-void app_set_mouse_grab(app_input_t *input, bool grab) {
+static void apply_mouse_grab(app_input_t *input, bool grab) {
     if (!app_configuration->hardware_mouse) {
         SDL_SetRelativeMouseMode(grab && !app_configuration->absmouse ? SDL_TRUE : SDL_FALSE);
     }
@@ -56,6 +58,27 @@ void app_set_mouse_grab(app_input_t *input, bool grab) {
     }
 #endif
     SDL_ShowCursor(grab ? SDL_FALSE : SDL_TRUE);
+}
+
+void app_set_mouse_grab(app_input_t *input, bool grab) {
+    input->mouse_grab = grab;
+    if (input->focused) {
+        apply_mouse_grab(input, grab);
+    }
+}
+
+void app_input_set_focused(app_input_t *input, bool focused) {
+    if (input->focused == focused) {
+        return;
+    }
+    input->focused = focused;
+    if (!input->mouse_grab) {
+        return;
+    }
+    /* Home mid-stream leaves the stream running in the background. A hidden cursor and
+     * relative mode would follow the user into the TV's launcher (no pointer, a warp per
+     * remote move), so hand them back while unfocused and take them again on return. */
+    apply_mouse_grab(input, focused);
 }
 
 bool app_get_mouse_relative() {
