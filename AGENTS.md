@@ -214,6 +214,10 @@ Do not make PCM the default.
 the previous one (Limelight delivers them in pairs). `audio_sequential_pts` (default on,
 `SS4S_NDL_AUDIO_SEQUENTIAL_PTS`) steps each stamp one frame past the last and sheds packets
 more than 4 frames ahead, so the stamp cannot ratchet. Watch `shed` in "Audio feed 1s".
+`audio_lead_ms` (default 20) is the jitter buffer: stamps go back to the clock only when the
+next slot is already in the past (`late` in "Audio feed 1s" = plane ran dry). Before that,
+any arrival gap over one frame re-anchored to now + lead, which left a hole and shed the burst
+that followed, so the lead absorbed no jitter.
 
 **7.1 is not possible on webOS** (checked 2026-11 against punktfunk/client-webos, measured on a
 G5 → Denon AVR): NDL's Opus plane decodes stereo or this one 5.1 layout only, NDL PCM 6ch plays
