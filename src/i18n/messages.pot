@@ -520,46 +520,46 @@ msgid ""
 "This connection can carry that bitrate."
 msgstr ""
 
-#: src/app/ui/launcher/server.context_menu.c:148
+#: src/app/ui/launcher/server.context_menu.c:143
 msgid "Restart PC"
 msgstr ""
 
-#: src/app/ui/launcher/server.context_menu.c:152
+#: src/app/ui/launcher/server.context_menu.c:147
 msgid "Shut down PC"
 msgstr ""
 
-#: src/app/ui/launcher/server.context_menu.c:320
+#: src/app/ui/launcher/server.context_menu.c:314
 msgid "Checking the PC..."
 msgstr ""
 
-#: src/app/ui/launcher/server.context_menu.c:340
+#: src/app/ui/launcher/server.context_menu.c:334
 msgid "Update Rubylight on this PC to restart or shut it down from Aurora."
 msgstr ""
 
-#: src/app/ui/launcher/server.context_menu.c:346
+#: src/app/ui/launcher/server.context_menu.c:340
 msgid "The PC did not answer."
 msgstr ""
 
-#: src/app/ui/launcher/server.context_menu.c:360
+#: src/app/ui/launcher/server.context_menu.c:356
 msgid "Restart"
 msgstr ""
 
-#: src/app/ui/launcher/server.context_menu.c:361
+#: src/app/ui/launcher/server.context_menu.c:357
 msgid "Shut down"
 msgstr ""
 
-#: src/app/ui/launcher/server.context_menu.c:368
+#: src/app/ui/launcher/server.context_menu.c:361
 msgid ""
 "Restart the PC now? A program with unsaved work on it can stop the restart."
 msgstr ""
 
-#: src/app/ui/launcher/server.context_menu.c:371
+#: src/app/ui/launcher/server.context_menu.c:363
 msgid ""
 "Shut down the PC now? A program with unsaved work on it can stop the "
 "shutdown."
 msgstr ""
 
-#: src/app/ui/launcher/server.context_menu.c:374
+#: src/app/ui/launcher/server.context_menu.c:365
 msgid ""
 "Shut down the PC now? A program with unsaved work on it can stop the "
 "shutdown.\n"
@@ -568,19 +568,19 @@ msgid ""
 "turn it on again."
 msgstr ""
 
-#: src/app/ui/launcher/server.context_menu.c:391
+#: src/app/ui/launcher/server.context_menu.c:382
 msgid "Restarting the PC..."
 msgstr ""
 
-#: src/app/ui/launcher/server.context_menu.c:392
+#: src/app/ui/launcher/server.context_menu.c:383
 msgid "Shutting down the PC..."
 msgstr ""
 
-#: src/app/ui/launcher/server.context_menu.c:409
+#: src/app/ui/launcher/server.context_menu.c:400
 msgid "The PC is restarting."
 msgstr ""
 
-#: src/app/ui/launcher/server.context_menu.c:410
+#: src/app/ui/launcher/server.context_menu.c:401
 msgid "The PC is shutting down."
 msgstr ""
 

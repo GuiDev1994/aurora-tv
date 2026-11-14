@@ -203,20 +203,28 @@ static size_t probe_write_fn(void *contents, size_t size, size_t nmemb, void *us
     return len;
 }
 
+/* A copy of the shared handle (certificate, User-Agent) that keeps the body of any status. */
+static CURL *dup_curl(HTTP *http) {
+    pthread_mutex_lock(&http->mutex);
+    CURL *curl = curl_easy_duphandle(http->curl);
+    pthread_mutex_unlock(&http->mutex);
+    if (curl != NULL) {
+        curl_easy_setopt(curl, CURLOPT_FAILONERROR, 0L);
+    }
+    return curl;
+}
+
 int http_probe_download(HTTP *http, const char *url, size_t max_bytes, int timeout_secs, HTTP_PROBE *probe) {
     assert(http != NULL);
     assert(probe != NULL);
     memset(probe, 0, sizeof(*probe));
     // A handle of its own, so other requests on this client don't wait seconds for the body.
-    pthread_mutex_lock(&http->mutex);
-    CURL *curl = curl_easy_duphandle(http->curl);
-    pthread_mutex_unlock(&http->mutex);
+    CURL *curl = dup_curl(http);
     if (curl == NULL) {
         return gs_set_error(GS_OUT_OF_MEMORY, "Failed to create cURL instance");
     }
     probe_state_t state = {.probe = probe, .max_bytes = max_bytes};
     curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
-    curl_easy_setopt(curl, CURLOPT_FAILONERROR, 0L);
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, (long) timeout_secs);
     curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, probe_header_fn);
@@ -252,21 +260,18 @@ int http_probe_download(HTTP *http, const char *url, size_t max_bytes, int timeo
     return ret;
 }
 
-int http_native_request(HTTP *http, const char *url, const char *json_body, int timeout_secs, HTTP_DATA *data,
-                        long *http_status) {
+int http_request_keep_body(HTTP *http, const char *url, const char *json_body, int timeout_secs, HTTP_DATA *data,
+                           long *http_status) {
     assert(http != NULL);
     assert(data != NULL);
     assert(http_status != NULL);
     *http_status = 0;
     // A handle of its own: the shared one fails on errors and drops the body that explains them.
-    pthread_mutex_lock(&http->mutex);
-    CURL *curl = curl_easy_duphandle(http->curl);
-    pthread_mutex_unlock(&http->mutex);
+    CURL *curl = dup_curl(http);
     if (curl == NULL) {
         return gs_set_error(GS_OUT_OF_MEMORY, "Failed to create cURL instance");
     }
     struct curl_slist *headers = NULL;
-    curl_easy_setopt(curl, CURLOPT_FAILONERROR, 0L);
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, (long) timeout_secs);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_fn);
@@ -279,7 +284,7 @@ int http_native_request(HTTP *http, const char *url, const char *json_body, int 
     } else {
         curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
     }
-    commons_log_debug("GameStream", "Native %s %s", json_body != NULL ? "POST" : "GET", url);
+    commons_log_debug("GameStream", "%s %s", json_body != NULL ? "POST" : "GET", url);
     CURLcode res = curl_easy_perform(curl);
     int ret = GS_OK;
     if (res != CURLE_OK) {

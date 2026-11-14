@@ -292,7 +292,7 @@ bitrate. Do not "fix" it by changing HEVC. For 120 fps, use HEVC.
 - Rubylight's native API (`/api/native/v1` on the HTTPS port, paired certificate) is gated
   by serverinfo's `NativeApiVersion`, which is 1 only over paired HTTPS. Its errors are JSON
   bodies (`error.code`, `error.message` in plain English to show as is), and the shared curl
-  handle sets `CURLOPT_FAILONERROR`, which drops them: go through `http_native_request`. The
+  handle sets `CURLOPT_FAILONERROR`, which drops them: go through `http_request_keep_body`. The
   host menu's "Restart PC" / "Shut down PC" read `GET /power` for a 30 s token and POST it
   (Rubylight 3.6+; 3.0–3.5 answer 404). The device needs Rubylight's per-device "Restart and
   shut down PC" grant, off by default; without it `/power` says so in `reason`.

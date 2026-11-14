@@ -120,15 +120,10 @@ bool pcmanager_quitapp(pcmanager_t *manager, const uuidstr_t *uuid, pcmanager_ca
 bool pcmanager_probe_bandwidth(pcmanager_t *manager, const uuidstr_t *uuid, GS_BANDWIDTH_PROBE *probe,
                                pcmanager_callback_t callback, void *userdata);
 
-typedef enum {
-    /** Only read GET /power. */
-    PCMANAGER_POWER_QUERY,
-    PCMANAGER_POWER_RESTART,
-    PCMANAGER_POWER_SHUTDOWN,
-} pcmanager_power_step_t;
-
 typedef struct {
-    pcmanager_power_step_t step;
+    GS_POWER_KIND kind;
+    /** Restart or shut down; false only reads GET /power. */
+    bool act;
     /** The read that fetched the token, or after an accepted action the read that found its refusal. */
     GS_HOST_POWER power;
     GS_NATIVE_STATUS status;
@@ -139,7 +134,7 @@ typedef struct {
 /**
  * Read whether a Rubylight host (nativeApiVersion) can restart or shut down now, or ask it to with a
  * fresh token. After the host accepts, a refusal from Windows fails the request with last_refusal set.
- * @param out step set by the caller, filled before the callback runs; must stay valid until then.
+ * @param out kind and act set by the caller, filled before the callback runs; must stay valid until then.
  *            Free out->power with gs_host_power_clear.
  * @return false when the host has no native API
  */

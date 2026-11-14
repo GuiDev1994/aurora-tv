@@ -33,14 +33,16 @@ void tearDown(void) {
 
 void test_reads_nested_values_by_path() {
     size_t len = strlen(POWER_BUSY);
-    TEST_ASSERT_EQUAL_INT(GS_JSON_BOOL, gs_json_type(POWER_BUSY, len, "restart.available"));
-    TEST_ASSERT_FALSE(gs_json_bool(POWER_BUSY, len, "restart.available", true));
-    TEST_ASSERT_TRUE(gs_json_bool(POWER_BUSY, len, "wake_from_off", false));
-    TEST_ASSERT_EQUAL_INT(GS_JSON_NULL, gs_json_type(POWER_BUSY, len, "token"));
-    TEST_ASSERT_EQUAL_INT(GS_JSON_NUMBER, gs_json_type(POWER_BUSY, len, "token_lifetime_s"));
-    TEST_ASSERT_EQUAL_INT(GS_JSON_OBJECT, gs_json_type(POWER_BUSY, len, "shutdown"));
-    TEST_ASSERT_EQUAL_INT(GS_JSON_MISSING, gs_json_type(POWER_BUSY, len, "restart.token"));
-    TEST_ASSERT_EQUAL_INT(GS_JSON_MISSING, gs_json_type(POWER_BUSY, len, "available"));
+    bool value = true;
+    TEST_ASSERT_TRUE(gs_json_bool(POWER_BUSY, len, "restart.available", &value));
+    TEST_ASSERT_FALSE(value);
+    TEST_ASSERT_TRUE(gs_json_bool(POWER_BUSY, len, "wake_from_off", &value));
+    TEST_ASSERT_TRUE(value);
+    /* Present but not a boolean, nested under another key, or at another level. */
+    TEST_ASSERT_FALSE(gs_json_bool(POWER_BUSY, len, "token_lifetime_s", &value));
+    TEST_ASSERT_FALSE(gs_json_bool(POWER_BUSY, len, "shutdown", &value));
+    TEST_ASSERT_FALSE(gs_json_bool(POWER_BUSY, len, "restart.token", &value));
+    TEST_ASSERT_FALSE(gs_json_bool(POWER_BUSY, len, "available", &value));
     char *reason = gs_json_string(POWER_BUSY, len, "shutdown.reason");
     TEST_ASSERT_EQUAL_STRING("Living room TV is streaming from this PC.", reason);
     free(reason);
@@ -72,14 +74,17 @@ void test_keys_inside_strings_and_arrays_do_not_match() {
 }
 
 void test_malformed_documents_find_nothing() {
+    bool value;
     const char *cut = "{\"restart\":{\"available\":tru";
-    TEST_ASSERT_EQUAL_INT(GS_JSON_MISSING, gs_json_type(cut, strlen(cut), "restart.available"));
+    TEST_ASSERT_FALSE(gs_json_bool(cut, strlen(cut), "restart.available", &value));
     const char *unquoted = "{restart:{\"available\":true}}";
-    TEST_ASSERT_EQUAL_INT(GS_JSON_MISSING, gs_json_type(unquoted, strlen(unquoted), "restart.available"));
+    TEST_ASSERT_FALSE(gs_json_bool(unquoted, strlen(unquoted), "restart.available", &value));
+    const char *open_string = "{\"a\":\"no end";
+    TEST_ASSERT_NULL(gs_json_string(open_string, strlen(open_string), "a"));
     const char *bad_escape = "{\"a\":\"\\q\"}";
     TEST_ASSERT_NULL(gs_json_string(bad_escape, strlen(bad_escape), "a"));
-    TEST_ASSERT_EQUAL_INT(GS_JSON_MISSING, gs_json_type("", 0, "a"));
-    TEST_ASSERT_EQUAL_INT(GS_JSON_MISSING, gs_json_type(NULL, 0, "a"));
+    TEST_ASSERT_FALSE(gs_json_bool("", 0, "a", &value));
+    TEST_ASSERT_NULL(gs_json_string(NULL, 0, "a"));
 }
 
 void test_parses_a_busy_pc() {
@@ -103,7 +108,7 @@ void test_parses_an_idle_pc_and_its_last_refusal() {
     TEST_ASSERT_EQUAL_STRING("3f9c00aa", power.token);
     TEST_ASSERT_FALSE(power.wake_from_off);
     TEST_ASSERT_EQUAL_STRING("Windows refused: \"Access is denied.\"", power.last_refusal);
-    TEST_ASSERT_TRUE(power.last_refusal_unconfirmed);
+    TEST_ASSERT_EQUAL_PTR(&power.shutdown, gs_host_power_get_action(&power, GS_POWER_SHUTDOWN));
     gs_host_power_clear(&power);
 }
 

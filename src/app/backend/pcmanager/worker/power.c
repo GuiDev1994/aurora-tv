@@ -4,8 +4,9 @@
 #include "app.h"
 #include "errors.h"
 
+#include "util/nullable.h"
+
 #include <SDL.h>
-#include <string.h>
 
 /* The host asks Windows once its 202 has left; a refusal shows in GET /power within seconds. */
 static int await_refusal(GS_CLIENT client, const SERVER_DATA *server, pcmanager_host_power_t *out) {
@@ -37,13 +38,11 @@ int worker_host_power(worker_context_t *context) {
     }
     GS_CLIENT client = app_gs_client_new(context->app);
     int ret = gs_get_host_power(client, server, &out->power, &out->status);
-    if (ret == GS_OK && out->step != PCMANAGER_POWER_QUERY) {
-        GS_POWER_KIND kind = out->step == PCMANAGER_POWER_RESTART ? GS_POWER_RESTART : GS_POWER_SHUTDOWN;
-        const GS_POWER_ACTION *action = kind == GS_POWER_RESTART ? &out->power.restart : &out->power.shutdown;
-        if (!action->available || out->power.token == NULL) {
+    if (ret == GS_OK && out->act) {
+        if (!gs_host_power_get_action(&out->power, out->kind)->available || out->power.token == NULL) {
             ret = GS_FAILED;
         } else {
-            ret = gs_host_power_action(client, server, kind, out->power.token, &out->status);
+            ret = gs_host_power_action(client, server, out->kind, out->power.token, &out->status);
             if (ret == GS_OK) {
                 out->accepted = true;
                 ret = await_refusal(client, server, out);
@@ -55,7 +54,7 @@ int worker_host_power(worker_context_t *context) {
     if (ret != GS_OK) {
         const char *gs_error = NULL;
         gs_get_error(&gs_error);
-        context->error = gs_error != NULL ? strdup(gs_error) : NULL;
+        context->error = strdup_nullable(gs_error);
     }
     return ret;
 }

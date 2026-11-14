@@ -49,7 +49,6 @@ static bool skip_literal(cursor_t *c, const char *literal) {
 }
 
 static bool skip_number(cursor_t *c) {
-    const char *start = c->p;
     if (c->p < c->end && *c->p == '-') {
         c->p++;
     }
@@ -58,7 +57,26 @@ static bool skip_number(cursor_t *c) {
                              *c->p == '+' || *c->p == '-')) {
         c->p++;
     }
-    return c->p > digits && c->p > start;
+    return c->p > digits;
+}
+
+/* Reads an object member's key and leaves c past its colon. */
+static bool read_key(cursor_t *c, const char **key, size_t *key_len) {
+    skip_ws(c);
+    if (c->p >= c->end || *c->p != '"') {
+        return false;
+    }
+    *key = c->p + 1;
+    if (!skip_string(c)) {
+        return false;
+    }
+    *key_len = (size_t) (c->p - 1 - *key);
+    skip_ws(c);
+    if (c->p >= c->end || *c->p != ':') {
+        return false;
+    }
+    c->p++;
+    return true;
 }
 
 static bool skip_container(cursor_t *c, int depth, char close, bool object) {
@@ -72,16 +90,10 @@ static bool skip_container(cursor_t *c, int depth, char close, bool object) {
         return true;
     }
     while (c->p < c->end) {
-        if (object) {
-            skip_ws(c);
-            if (c->p >= c->end || *c->p != '"' || !skip_string(c)) {
-                return false;
-            }
-            skip_ws(c);
-            if (c->p >= c->end || *c->p != ':') {
-                return false;
-            }
-            c->p++;
+        const char *key;
+        size_t key_len;
+        if (object && !read_key(c, &key, &key_len)) {
+            return false;
         }
         if (!skip_value(c, depth + 1)) {
             return false;
@@ -141,20 +153,11 @@ static bool find(cursor_t *c, const char *path) {
         c->p++;
         bool found = false;
         while (!found) {
-            skip_ws(c);
-            if (c->p >= c->end || *c->p != '"') {
+            const char *key;
+            size_t key_len;
+            if (!read_key(c, &key, &key_len)) {
                 return false;
             }
-            const char *key = c->p + 1;
-            if (!skip_string(c)) {
-                return false;
-            }
-            size_t key_len = (size_t) (c->p - 1 - key);
-            skip_ws(c);
-            if (c->p >= c->end || *c->p != ':') {
-                return false;
-            }
-            c->p++;
             if (key_len == segment_len && memcmp(key, segment, segment_len) == 0) {
                 found = true;
             } else {
@@ -173,42 +176,26 @@ static bool find(cursor_t *c, const char *path) {
     return false;
 }
 
-GS_JSON_TYPE gs_json_type(const char *json, size_t len, const char *path) {
+/* Leaves at on the first character of the well-formed value at path. */
+static bool locate(const char *json, size_t len, const char *path, cursor_t *at) {
     if (json == NULL || path == NULL) {
-        return GS_JSON_MISSING;
+        return false;
     }
     cursor_t c = {json, json + len};
     if (!find(&c, path)) {
-        return GS_JSON_MISSING;
+        return false;
     }
-    cursor_t value = c;
-    if (!skip_value(&value, 0)) {
-        return GS_JSON_MISSING;
-    }
-    switch (*c.p) {
-        case '"':
-            return GS_JSON_STRING;
-        case '{':
-            return GS_JSON_OBJECT;
-        case '[':
-            return GS_JSON_ARRAY;
-        case 't':
-        case 'f':
-            return GS_JSON_BOOL;
-        case 'n':
-            return GS_JSON_NULL;
-        default:
-            return GS_JSON_NUMBER;
-    }
+    *at = c;
+    return skip_value(&c, 0);
 }
 
-bool gs_json_bool(const char *json, size_t len, const char *path, bool fallback) {
-    if (gs_json_type(json, len, path) != GS_JSON_BOOL) {
-        return fallback;
+bool gs_json_bool(const char *json, size_t len, const char *path, bool *out) {
+    cursor_t at;
+    if (!locate(json, len, path, &at) || (*at.p != 't' && *at.p != 'f')) {
+        return false;
     }
-    cursor_t c = {json, json + len};
-    find(&c, path);
-    return *c.p == 't';
+    *out = *at.p == 't';
+    return true;
 }
 
 static int hex_value(char ch) {
@@ -264,15 +251,13 @@ static size_t put_utf8(char *out, uint32_t cp) {
 }
 
 char *gs_json_string(const char *json, size_t len, const char *path) {
-    if (gs_json_type(json, len, path) != GS_JSON_STRING) {
+    cursor_t at;
+    if (!locate(json, len, path, &at) || *at.p != '"') {
         return NULL;
     }
-    cursor_t c = {json, json + len};
-    find(&c, path);
-    const char *p = c.p + 1;
-    cursor_t raw = c;
-    skip_string(&raw);
-    const char *end = raw.p - 1;
+    const char *p = at.p + 1;
+    skip_string(&at);
+    const char *end = at.p - 1;
     /* An escape never grows: \uXXXX is 6 bytes for at most 3, a surrogate pair 12 for 4. */
     char *out = malloc((size_t) (end - p) + 1);
     if (out == NULL) {

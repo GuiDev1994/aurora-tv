@@ -57,8 +57,8 @@ int http_probe_download(HTTP *http, const char *url, size_t max_bytes, int timeo
  * any status, for at most timeout_secs. GS_OK once an answer arrived, with its status in http_status;
  * GS_IO_ERROR when none did.
  */
-int http_native_request(HTTP *http, const char *url, const char *json_body, int timeout_secs, HTTP_DATA *data,
-                        long *http_status);
+int http_request_keep_body(HTTP *http, const char *url, const char *json_body, int timeout_secs, HTTP_DATA *data,
+                           long *http_status);
 
 void http_set_user_agent(HTTP *http, const char *user_agent);
 

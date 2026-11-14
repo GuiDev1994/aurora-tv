@@ -96,7 +96,7 @@ void test_get_keeps_the_body() {
     url(target, sizeof(target), "power");
     HTTP_DATA *data = http_data_alloc();
     long status = -1;
-    TEST_ASSERT_EQUAL_INT(GS_OK, http_native_request(http, target, NULL, 10, data, &status));
+    TEST_ASSERT_EQUAL_INT(GS_OK, http_request_keep_body(http, target, NULL, 10, data, &status));
     TEST_ASSERT_EQUAL_INT(200, status);
     TEST_ASSERT_EQUAL_STRING("{\"restart\":{\"available\":true,\"reason\":null}}", data->memory);
     TEST_ASSERT_EQUAL_INT(0, strncmp(server.request, "GET /api/native/v1/power HTTP/1.1\r\n", 35));
@@ -110,7 +110,7 @@ void test_an_error_status_keeps_the_body_that_explains_it() {
     url(target, sizeof(target), "power/restart");
     HTTP_DATA *data = http_data_alloc();
     long status = 0;
-    TEST_ASSERT_EQUAL_INT(GS_OK, http_native_request(http, target, "{\"token\":\"ab\"}", 10, data, &status));
+    TEST_ASSERT_EQUAL_INT(GS_OK, http_request_keep_body(http, target, "{\"token\":\"ab\"}", 10, data, &status));
     TEST_ASSERT_EQUAL_INT(409, status);
     TEST_ASSERT_EQUAL_STRING(body, data->memory);
     http_data_free(data);
@@ -123,7 +123,7 @@ void test_post_sends_the_json_body() {
     url(target, sizeof(target), "power/shutdown");
     HTTP_DATA *data = http_data_alloc();
     long status = 0;
-    TEST_ASSERT_EQUAL_INT(GS_OK, http_native_request(http, target, "{\"token\":\"3f9c\"}", 10, data, &status));
+    TEST_ASSERT_EQUAL_INT(GS_OK, http_request_keep_body(http, target, "{\"token\":\"3f9c\"}", 10, data, &status));
     TEST_ASSERT_EQUAL_INT(202, status);
     TEST_ASSERT_EQUAL_INT(0, strncmp(server.request, "POST /api/native/v1/power/shutdown HTTP/1.1\r\n", 45));
     TEST_ASSERT_NOT_NULL(strstr(server.request, "\r\nContent-Type: application/json\r\n"));
@@ -139,7 +139,7 @@ void test_no_answer_is_an_io_error() {
     url(target, sizeof(target), "power");
     HTTP_DATA *data = http_data_alloc();
     long status = -1;
-    TEST_ASSERT_EQUAL_INT(GS_IO_ERROR, http_native_request(http, target, NULL, 5, data, &status));
+    TEST_ASSERT_EQUAL_INT(GS_IO_ERROR, http_request_keep_body(http, target, NULL, 5, data, &status));
     TEST_ASSERT_EQUAL_INT(0, status);
     http_data_free(data);
 }

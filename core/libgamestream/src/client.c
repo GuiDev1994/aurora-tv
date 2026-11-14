@@ -1035,24 +1035,23 @@ static int resolve_ports(GS_CLIENT hnd, const char *address, uint16_t port, uint
     return ret;
 }
 
+/* scheme://host:port, with an IPv6 host in brackets and GameStream's default port for 0. */
+static size_t base_url(char *url, size_t ulen, bool secure, const char *address, uint16_t port) {
+    if (port == 0) {
+        port = secure ? 47984 : 47989;
+    }
+    return (size_t) snprintf(url, ulen, strchr(address, ':') != NULL ? "%s://[%s]:%u" : "%s://%s:%u",
+                             secure ? "https" : "http", address, port);
+}
+
 static bool construct_url(GS_CLIENT hnd, char *url, size_t ulen, bool secure, const char *address, uint16_t port,
                           const char *action, const char *fmt, ...) {
     uuidstr_t uuid;
     if (!uuidstr_random(&uuid)) {
         return false;
     }
-    if (port == 0) {
-        port = secure ? 47984 : 47989;
-    }
-    char *const proto = secure ? "https" : "http";
-    size_t w_len = snprintf(url, ulen, "%s://", proto);
-    bool is_ipv6 = strchr(address, ':') != NULL;
-    if (is_ipv6) {
-        w_len += snprintf(url + w_len, ulen - w_len, "[%s]", address);
-    } else {
-        w_len += snprintf(url + w_len, ulen - w_len, "%s", address);
-    }
-    w_len += snprintf(url + w_len, ulen - w_len, ":%u/%s?uniqueid=%s&uuid=%.*s", port, action, hnd->unique_id, 36,
+    size_t w_len = base_url(url, ulen, secure, address, port);
+    w_len += snprintf(url + w_len, ulen - w_len, "/%s?uniqueid=%s&uuid=%.*s", action, hnd->unique_id, 36,
                       uuid.data);
     if (fmt) {
         char params[4096];
@@ -1248,14 +1247,11 @@ int gs_probe_bandwidth(GS_CLIENT hnd, const SERVER_DATA *server, GS_BANDWIDTH_PR
 static int native_request(GS_CLIENT hnd, const SERVER_DATA *server, const char *path, const char *json_body,
                           HTTP_DATA *data, GS_NATIVE_STATUS *status) {
     memset(status, 0, sizeof(*status));
-    uint16_t port = server_port(server, true);
-    const char *address = server->serverInfo.address;
     char url[1024];
-    snprintf(url, sizeof(url), strchr(address, ':') != NULL ? "https://[%s]:%u/api/native/v1/%s"
-                                                            : "https://%s:%u/api/native/v1/%s",
-             address, port != 0 ? port : 47984, path);
+    size_t w_len = base_url(url, sizeof(url), true, server->serverInfo.address, server_port(server, true));
+    snprintf(url + w_len, sizeof(url) - w_len, "/api/native/v1/%s", path);
     long http_status = 0;
-    int ret = http_native_request(hnd->http, url, json_body, 10, data, &http_status);
+    int ret = http_request_keep_body(hnd->http, url, json_body, 10, data, &http_status);
     if (ret != GS_OK) {
         return ret;
     }
@@ -1293,19 +1289,20 @@ int gs_get_host_power(GS_CLIENT hnd, const SERVER_DATA *server, GS_HOST_POWER *p
 
 bool gs_host_power_parse(const char *json, size_t len, GS_HOST_POWER *power) {
     memset(power, 0, sizeof(*power));
-    if (gs_json_type(json, len, "restart.available") != GS_JSON_BOOL ||
-        gs_json_type(json, len, "shutdown.available") != GS_JSON_BOOL) {
+    if (!gs_json_bool(json, len, "restart.available", &power->restart.available) ||
+        !gs_json_bool(json, len, "shutdown.available", &power->shutdown.available)) {
         return false;
     }
-    power->restart.available = gs_json_bool(json, len, "restart.available", false);
     power->restart.reason = gs_json_string(json, len, "restart.reason");
-    power->shutdown.available = gs_json_bool(json, len, "shutdown.available", false);
     power->shutdown.reason = gs_json_string(json, len, "shutdown.reason");
     power->token = gs_json_string(json, len, "token");
-    power->wake_from_off = gs_json_bool(json, len, "wake_from_off", false);
+    gs_json_bool(json, len, "wake_from_off", &power->wake_from_off);
     power->last_refusal = gs_json_string(json, len, "last_refusal");
-    power->last_refusal_unconfirmed = gs_json_bool(json, len, "last_refusal_unconfirmed", false);
     return true;
+}
+
+const GS_POWER_ACTION *gs_host_power_get_action(const GS_HOST_POWER *power, GS_POWER_KIND kind) {
+    return kind == GS_POWER_RESTART ? &power->restart : &power->shutdown;
 }
 
 int gs_host_power_action(GS_CLIENT hnd, const SERVER_DATA *server, GS_POWER_KIND kind, const char *token,

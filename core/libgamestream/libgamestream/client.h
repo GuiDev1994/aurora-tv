@@ -173,10 +173,8 @@ typedef struct {
     char *token;
     /** A wired wake target is ready, so Wake-on-LAN can likely start the PC after a shutdown. */
     bool wake_from_off;
-    /** Why this device's last accepted restart or shutdown did not happen; NULL when it did. */
+    /** Why this device's last accepted restart or shutdown did not happen (or may not have); NULL when it did. */
     char *last_refusal;
-    /** last_refusal is no refusal: Windows did not confirm in time, and the PC may still go down. */
-    bool last_refusal_unconfirmed;
 } GS_HOST_POWER;
 
 typedef enum {
@@ -189,6 +187,8 @@ int gs_get_host_power(GS_CLIENT hnd, const SERVER_DATA *server, GS_HOST_POWER *p
 
 /* Reads a GET /power body into power (cleared first); false when it holds no power state. */
 bool gs_host_power_parse(const char *json, size_t len, GS_HOST_POWER *power);
+
+const GS_POWER_ACTION *gs_host_power_get_action(const GS_HOST_POWER *power, GS_POWER_KIND kind);
 
 /* Asks the PC to restart or shut down with a token from gs_get_host_power. GS_OK once the host
  * accepted (202); it then asks Windows, which can still refuse: read gs_get_host_power's last_refusal. */
