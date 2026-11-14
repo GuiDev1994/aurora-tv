@@ -30,6 +30,17 @@ typedef struct bandwidth_test_t {
     int lower_to_kbps;
 } bandwidth_test_t;
 
+typedef struct host_power_t {
+    pcmanager_host_power_t request;
+    /* PCMANAGER_POWER_RESTART or PCMANAGER_POWER_SHUTDOWN: what the user picked. */
+    pcmanager_power_step_t action;
+    uuidstr_t uuid;
+    lv_obj_t *progress;
+    /* Held by the request in flight and by each dialog showing it; the last one frees it. */
+    int refs;
+    bool confirmed;
+} host_power_t;
+
 static void menu_ctor(lv_fragment_t *self, void *arg);
 
 static void menu_dtor(lv_fragment_t *self);
@@ -57,6 +68,24 @@ static void bandwidth_test_cb(int result, const char *error, const uuidstr_t *uu
 static void bandwidth_result_cb(lv_event_t *e);
 
 static void bandwidth_result_free_cb(lv_event_t *e);
+
+static void restart_pc(const pclist_t *node);
+
+static void shutdown_pc(const pclist_t *node);
+
+static void host_power_start(const pclist_t *node, pcmanager_power_step_t action);
+
+static void host_power_checked_cb(int result, const char *error, const uuidstr_t *uuid, void *userdata);
+
+static void host_power_confirm_cb(lv_event_t *e);
+
+static void host_power_done_cb(int result, const char *error, const uuidstr_t *uuid, void *userdata);
+
+static void host_power_message(host_power_t *power, const char *text);
+
+static void host_power_close_cb(lv_event_t *e);
+
+static void host_power_unref_cb(lv_event_t *e);
 
 static void wake_settings_cb(lv_event_t *e);
 
@@ -115,6 +144,16 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *parent) {
         lv_obj_set_user_data(bandwidth_btn, test_bandwidth);
     }
 
+    if (node->state.code == SERVER_STATE_AVAILABLE && node->server->nativeApiVersion > 0) {
+        lv_obj_t *restart_btn = lv_list_add_btn(content, NULL, locstr("Restart PC"));
+        lv_obj_add_flag(restart_btn, LV_OBJ_FLAG_EVENT_BUBBLE);
+        lv_obj_set_user_data(restart_btn, restart_pc);
+
+        lv_obj_t *shutdown_btn = lv_list_add_btn(content, NULL, locstr("Shut down PC"));
+        lv_obj_add_flag(shutdown_btn, LV_OBJ_FLAG_EVENT_BUBBLE);
+        lv_obj_set_user_data(shutdown_btn, shutdown_pc);
+    }
+
     if (pcmanager_can_forget(pcmanager, &controller->uuid)) {
         lv_obj_t *forget_btn = lv_list_add_btn(content, NULL, locstr("Forget"));
         lv_obj_add_flag(forget_btn, LV_OBJ_FLAG_EVENT_BUBBLE);
@@ -161,6 +200,10 @@ static void context_menu_click_cb(lv_event_t *e) {
         configure_wake(node);
     } else if (target_userdata == test_bandwidth) {
         test_bandwidth(node);
+    } else if (target_userdata == restart_pc) {
+        restart_pc(node);
+    } else if (target_userdata == shutdown_pc) {
+        shutdown_pc(node);
     }
 }
 
@@ -258,6 +301,143 @@ static void bandwidth_result_cb(lv_event_t *e) {
 
 static void bandwidth_result_free_cb(lv_event_t *e) {
     SDL_free(lv_event_get_user_data(e));
+}
+
+static void restart_pc(const pclist_t *node) {
+    host_power_start(node, PCMANAGER_POWER_RESTART);
+}
+
+static void shutdown_pc(const pclist_t *node) {
+    host_power_start(node, PCMANAGER_POWER_SHUTDOWN);
+}
+
+static void host_power_start(const pclist_t *node, pcmanager_power_step_t action) {
+    host_power_t *power = SDL_calloc(1, sizeof(host_power_t));
+    power->action = action;
+    power->uuid = node->id;
+    power->refs = 1;
+    power->request.step = PCMANAGER_POWER_QUERY;
+    power->progress = progress_dialog_create(locstr("Checking the PC..."));
+    if (!pcmanager_host_power(pcmanager, &node->id, &power->request, host_power_checked_cb, power)) {
+        lv_msgbox_close(power->progress);
+        SDL_free(power);
+    }
+}
+
+static const GS_POWER_ACTION *host_power_action(const host_power_t *power) {
+    return power->action == PCMANAGER_POWER_RESTART ? &power->request.power.restart
+                                                    : &power->request.power.shutdown;
+}
+
+static const char *host_power_failure(const host_power_t *power, const char *error) {
+    const GS_POWER_ACTION *action = host_power_action(power);
+    const GS_NATIVE_STATUS *status = &power->request.status;
+    if (!action->available && action->reason != NULL) {
+        return action->reason;
+    }
+    if (status->http_status == 404) {
+        /* Rubylight 3.0 to 3.5 have the native API but no /power. */
+        return locstr("Update Rubylight on this PC to restart or shut it down from Aurora.");
+    }
+    if (status->message[0] != '\0') {
+        return status->message;
+    }
+    if (status->http_status == 0 || error == NULL || error[0] == '\0') {
+        return locstr("The PC did not answer.");
+    }
+    return error;
+}
+
+static void host_power_checked_cb(int result, const char *error, const uuidstr_t *uuid, void *userdata) {
+    LV_UNUSED(uuid);
+    host_power_t *power = userdata;
+    lv_msgbox_close(power->progress);
+    power->progress = NULL;
+    if (result != GS_OK || !host_power_action(power)->available || power->request.power.token == NULL) {
+        host_power_message(power, host_power_failure(power, error));
+        return;
+    }
+    static const char *restart_btns[] = {translatable("Cancel"), translatable("Restart"), ""};
+    static const char *shutdown_btns[] = {translatable("Cancel"), translatable("Shut down"), ""};
+    bool restart = power->action == PCMANAGER_POWER_RESTART;
+    const pclist_t *node = pcmanager_node(pcmanager, &power->uuid);
+    const char *title = node != NULL && node->server != NULL ? node->server->hostname : NULL;
+    lv_obj_t *mbox = lv_msgbox_create_i18n(NULL, title, "placeholder", restart ? restart_btns : shutdown_btns, false);
+    lv_obj_t *message = lv_msgbox_get_text(mbox);
+    if (restart) {
+        lv_label_set_text(message, locstr("Restart the PC now? A program with unsaved work on it can stop the "
+                                          "restart."));
+    } else if (power->request.power.wake_from_off) {
+        lv_label_set_text(message, locstr("Shut down the PC now? A program with unsaved work on it can stop the "
+                                          "shutdown."));
+    } else {
+        lv_label_set_text(message, locstr("Shut down the PC now? A program with unsaved work on it can stop the "
+                                          "shutdown.\n\nThe PC has no wired network ready to wake it, so Aurora "
+                                          "may not be able to turn it on again."));
+    }
+    lv_obj_add_event_cb(mbox, host_power_confirm_cb, LV_EVENT_VALUE_CHANGED, power);
+    lv_obj_add_event_cb(mbox, host_power_unref_cb, LV_EVENT_DELETE, power);
+    lv_obj_center(mbox);
+}
+
+static void host_power_confirm_cb(lv_event_t *e) {
+    lv_obj_t *mbox = lv_event_get_current_target(e);
+    host_power_t *power = lv_event_get_user_data(e);
+    if (lv_msgbox_get_active_btn(mbox) == 1 && !power->confirmed) {
+        power->confirmed = true;
+        gs_host_power_clear(&power->request.power);
+        power->request.step = power->action;
+        power->progress = progress_dialog_create(power->action == PCMANAGER_POWER_RESTART
+                                                 ? locstr("Restarting the PC...")
+                                                 : locstr("Shutting down the PC..."));
+        if (pcmanager_host_power(pcmanager, &power->uuid, &power->request, host_power_done_cb, power)) {
+            power->refs++;
+        } else {
+            lv_msgbox_close(power->progress);
+            power->progress = NULL;
+        }
+    }
+    lv_msgbox_close_async(mbox);
+}
+
+static void host_power_done_cb(int result, const char *error, const uuidstr_t *uuid, void *userdata) {
+    LV_UNUSED(uuid);
+    host_power_t *power = userdata;
+    lv_msgbox_close(power->progress);
+    power->progress = NULL;
+    if (result == GS_OK) {
+        host_power_message(power, power->action == PCMANAGER_POWER_RESTART ? locstr("The PC is restarting.")
+                                                                           : locstr("The PC is shutting down."));
+    } else if (power->request.accepted && power->request.power.last_refusal != NULL) {
+        host_power_message(power, power->request.power.last_refusal);
+    } else {
+        host_power_message(power, host_power_failure(power, error));
+    }
+}
+
+/* Shows text; the dialog takes over the finished request's reference. */
+static void host_power_message(host_power_t *power, const char *text) {
+    static const char *ok_btns[] = {translatable("OK"), ""};
+    const pclist_t *node = pcmanager_node(pcmanager, &power->uuid);
+    const char *title = node != NULL && node->server != NULL ? node->server->hostname : NULL;
+    lv_obj_t *mbox = lv_msgbox_create_i18n(NULL, title, "placeholder", ok_btns, false);
+    lv_label_set_text(lv_msgbox_get_text(mbox), text);
+    lv_obj_add_event_cb(mbox, host_power_close_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(mbox, host_power_unref_cb, LV_EVENT_DELETE, power);
+    lv_obj_center(mbox);
+}
+
+static void host_power_close_cb(lv_event_t *e) {
+    lv_msgbox_close_async(lv_event_get_current_target(e));
+}
+
+static void host_power_unref_cb(lv_event_t *e) {
+    host_power_t *power = lv_event_get_user_data(e);
+    if (--power->refs > 0) {
+        return;
+    }
+    gs_host_power_clear(&power->request.power);
+    SDL_free(power);
 }
 
 typedef struct wake_settings_ctx_t {

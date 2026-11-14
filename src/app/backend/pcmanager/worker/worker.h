@@ -26,6 +26,8 @@ int worker_quit_app(worker_context_t *context);
 
 int worker_probe_bandwidth(worker_context_t *context);
 
+int worker_host_power(worker_context_t *context);
+
 int worker_wol(worker_context_t *context);
 
 int worker_add_by_host(worker_context_t *context);

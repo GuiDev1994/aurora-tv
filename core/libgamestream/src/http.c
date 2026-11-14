@@ -252,6 +252,46 @@ int http_probe_download(HTTP *http, const char *url, size_t max_bytes, int timeo
     return ret;
 }
 
+int http_native_request(HTTP *http, const char *url, const char *json_body, int timeout_secs, HTTP_DATA *data,
+                        long *http_status) {
+    assert(http != NULL);
+    assert(data != NULL);
+    assert(http_status != NULL);
+    *http_status = 0;
+    // A handle of its own: the shared one fails on errors and drops the body that explains them.
+    pthread_mutex_lock(&http->mutex);
+    CURL *curl = curl_easy_duphandle(http->curl);
+    pthread_mutex_unlock(&http->mutex);
+    if (curl == NULL) {
+        return gs_set_error(GS_OUT_OF_MEMORY, "Failed to create cURL instance");
+    }
+    struct curl_slist *headers = NULL;
+    curl_easy_setopt(curl, CURLOPT_FAILONERROR, 0L);
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, (long) timeout_secs);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_fn);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, data);
+    if (json_body != NULL) {
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_body);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long) strlen(json_body));
+    } else {
+        curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+    }
+    commons_log_debug("GameStream", "Native %s %s", json_body != NULL ? "POST" : "GET", url);
+    CURLcode res = curl_easy_perform(curl);
+    int ret = GS_OK;
+    if (res != CURLE_OK) {
+        ret = gs_set_error(GS_IO_ERROR, "cURL error: %s", curl_easy_strerror(res));
+    } else {
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, http_status);
+    }
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+    return ret;
+}
+
 void http_set_user_agent(HTTP *http, const char *user_agent) {
     assert(http != NULL);
     pthread_mutex_lock(&http->mutex);

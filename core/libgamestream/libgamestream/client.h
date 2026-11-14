@@ -53,6 +53,8 @@ typedef struct _SERVER_DATA {
     char *wake_url;
     /** BandwidthProbeVersion (Rubylight 3.0+): the host serves gs_probe_bandwidth. 0 when absent. */
     int bandwidthProbeVersion;
+    /** NativeApiVersion (Rubylight 3.0+): /api/native/v1 answers this paired client. 0 when absent. */
+    int nativeApiVersion;
     PDISPLAY_MODE modes;
     SERVER_INFORMATION serverInfo;
 } SERVER_DATA, *PSERVER_DATA;
@@ -146,3 +148,51 @@ typedef struct {
  * from its headers to the end of its body. The host stops after 3 s, so a short body on a slow
  * link is still a measurement. A refusal is GS_FAILED with refused_status set. */
 int gs_probe_bandwidth(GS_CLIENT hnd, const SERVER_DATA *server, GS_BANDWIDTH_PROBE *probe);
+
+/* How a native API request (Rubylight's /api/native/v1, nativeApiVersion) ended. */
+typedef struct {
+    /** HTTP status of the answer; 0 when none arrived. */
+    int http_status;
+    /** The error's code ("host_in_use", "not_found", ...); empty on success. */
+    char code[32];
+    /** The host's own words for a refusal, in English, to show as they are; empty when it gave none. */
+    char message[512];
+} GS_NATIVE_STATUS;
+
+typedef struct {
+    bool available;
+    /** Why not, in the host's words; NULL when available. */
+    char *reason;
+} GS_POWER_ACTION;
+
+/* GET /api/native/v1/power (Rubylight 3.6+). */
+typedef struct {
+    GS_POWER_ACTION restart;
+    GS_POWER_ACTION shutdown;
+    /** Spends one restart or shutdown within 30 s; NULL when neither is available. */
+    char *token;
+    /** A wired wake target is ready, so Wake-on-LAN can likely start the PC after a shutdown. */
+    bool wake_from_off;
+    /** Why this device's last accepted restart or shutdown did not happen; NULL when it did. */
+    char *last_refusal;
+    /** last_refusal is no refusal: Windows did not confirm in time, and the PC may still go down. */
+    bool last_refusal_unconfirmed;
+} GS_HOST_POWER;
+
+typedef enum {
+    GS_POWER_RESTART,
+    GS_POWER_SHUTDOWN,
+} GS_POWER_KIND;
+
+/* Reads whether the PC can restart or shut down now. Any answer but 200 is GS_FAILED with status set. */
+int gs_get_host_power(GS_CLIENT hnd, const SERVER_DATA *server, GS_HOST_POWER *power, GS_NATIVE_STATUS *status);
+
+/* Reads a GET /power body into power (cleared first); false when it holds no power state. */
+bool gs_host_power_parse(const char *json, size_t len, GS_HOST_POWER *power);
+
+/* Asks the PC to restart or shut down with a token from gs_get_host_power. GS_OK once the host
+ * accepted (202); it then asks Windows, which can still refuse: read gs_get_host_power's last_refusal. */
+int gs_host_power_action(GS_CLIENT hnd, const SERVER_DATA *server, GS_POWER_KIND kind, const char *token,
+                         GS_NATIVE_STATUS *status);
+
+void gs_host_power_clear(GS_HOST_POWER *power);
