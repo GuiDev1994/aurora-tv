@@ -81,6 +81,12 @@ void gs_set_total_timeout(GS_CLIENT hnd, int timeout_secs);
 /* User-Agent of every request made through this client. Rubylight lists it per device. */
 void gs_set_user_agent(GS_CLIENT hnd, const char *user_agent);
 
+/**
+ * Set the name the host shows for this client while pairing. It is truncated to 64 bytes and URL-encoded.
+ * NULL or an empty string restores the default, "roth".
+ */
+void gs_set_device_name(GS_CLIENT hnd, const char *name);
+
 int gs_get_status(GS_CLIENT hnd, PSERVER_DATA server, const char *address, uint16_t port, bool unsupported);
 
 /* hdr: the user asked for HDR. A 10-bit format offered without it is 10-bit SDR. */
