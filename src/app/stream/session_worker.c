@@ -47,9 +47,10 @@ static void add_reason_after_failed_start(session_t *session, GS_CLIENT client, 
     serverdata_free(status);
 }
 
-/* The refresh after a stream read serverinfo, where a host that ended the stream may say why. */
-static void add_reason_after_host_ended(session_t *session, const uuidstr_t *uuid) {
-    if (!host_failure_ended_stream(session->termination_code)) {
+/* The refresh after a stream read serverinfo, where a host that ended the stream may say why;
+ * a failed refresh leaves an older stream's reason in the list. */
+static void add_reason_after_host_ended(session_t *session, const uuidstr_t *uuid, int refreshed) {
+    if (refreshed != GS_OK || !host_failure_ended_stream(session->termination_code)) {
         return;
     }
     pcmanager_lock(pcmanager);
@@ -258,8 +259,8 @@ int session_worker(session_t *session) {
             .manager = pcmanager,
     };
     uuidstr_fromstr(&update_ctx.uuid, server->uuid);
-    pcmanager_update_by_host(&update_ctx, server->serverInfo.address, server->extPort, true);
-    add_reason_after_host_ended(session, &update_ctx.uuid);
+    int refreshed = pcmanager_update_by_host(&update_ctx, server->serverInfo.address, server->extPort, true);
+    add_reason_after_host_ended(session, &update_ctx.uuid, refreshed);
 
     // Don't always reset status as error state should be kept
     session_set_state(session, STREAMING_NONE);
