@@ -52,6 +52,14 @@ int http_request(HTTP *http, char *url, HTTP_DATA * data);
  */
 int http_probe_download(HTTP *http, const char *url, size_t max_bytes, int timeout_secs, HTTP_PROBE *probe);
 
+/**
+ * GETs url, or POSTs json_body to it as application/json when it is not NULL, and keeps the body of
+ * any status, for at most timeout_secs. GS_OK once an answer arrived, with its status in http_status;
+ * GS_IO_ERROR when none did.
+ */
+int http_request_keep_body(HTTP *http, const char *url, const char *json_body, int timeout_secs, HTTP_DATA *data,
+                           long *http_status);
+
 void http_set_user_agent(HTTP *http, const char *user_agent);
 
 int http_post_json(HTTP *http, char *url, const char *payload, HTTP_DATA *data);

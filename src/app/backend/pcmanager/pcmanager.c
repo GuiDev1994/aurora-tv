@@ -82,6 +82,18 @@ bool pcmanager_probe_bandwidth(pcmanager_t *manager, const uuidstr_t *uuid, GS_B
     return true;
 }
 
+bool pcmanager_host_power(pcmanager_t *manager, const uuidstr_t *uuid, pcmanager_host_power_t *out,
+                          pcmanager_callback_t callback, void *userdata) {
+    const pclist_t *node = pcmanager_node(manager, uuid);
+    if (node == NULL || node->server == NULL || node->server->nativeApiVersion <= 0) {
+        return false;
+    }
+    worker_context_t *ctx = worker_context_new(manager, uuid, callback, userdata);
+    ctx->out = out;
+    pcmanager_worker_queue(manager, worker_host_power, ctx);
+    return true;
+}
+
 void pcmanager_request_update(pcmanager_t *manager, const uuidstr_t *uuid, pcmanager_callback_t callback,
                               void *userdata) {
     commons_log_info("PcManager", "Requesting update for %s", (const char *) uuid);
