@@ -11,9 +11,13 @@
 #include "stream/audio/session_audio.h"
 #include "stream/video/session_video.h"
 #include "stream/adaptive_bitrate.h"
+#include "stream/host_failure.h"
 #include "stream/link_hint.h"
 #include "app_session.h"
+#include "backend/pcmanager/pclist.h"
+#include "backend/pcmanager/priv.h"
 #include "backend/pcmanager/worker/worker.h"
+#include "util/nullable.h"
 #include "app_settings.h"
 
 #if TARGET_WEBOS
@@ -29,6 +33,33 @@
 /* Installer greps this string out of the ELF. */
 static const char aurora_build_tag[] __attribute__((used)) = "aurora-v1.3.3";
 #endif
+
+/* Rubylight 3.0+ (bandwidthProbeVersion) keeps why it refused this device's stream in the handshake. */
+static void add_reason_after_failed_start(session_t *session, GS_CLIENT client, const SERVER_DATA *server) {
+    if (session->failed_stage != STAGE_RTSP_HANDSHAKE || server->bandwidthProbeVersion <= 0) {
+        return;
+    }
+    PSERVER_DATA status = serverdata_new();
+    if (gs_get_status(client, status, strdup(server->serverInfo.address), server->extPort,
+                      app_configuration->unsupported) == GS_OK) {
+        streaming_error_add_host_reason(session, status->lastFailure);
+    }
+    serverdata_free(status);
+}
+
+/* The refresh after a stream read serverinfo, where a host that ended the stream may say why;
+ * a failed refresh leaves an older stream's reason in the list. */
+static void add_reason_after_host_ended(session_t *session, const uuidstr_t *uuid, int refreshed) {
+    if (refreshed != GS_OK || !host_failure_ended_stream(session->termination_code)) {
+        return;
+    }
+    pcmanager_lock(pcmanager);
+    pclist_t *node = pclist_find_by_uuid(pcmanager, uuid);
+    char *reason = node != NULL && node->server != NULL ? strdup_nullable(node->server->lastFailure) : NULL;
+    pcmanager_unlock(pcmanager);
+    streaming_error_add_host_reason(session, reason);
+    free(reason);
+}
 
 int session_worker(session_t *session) {
     app_t *app = session->app;
@@ -183,6 +214,7 @@ int session_worker(session_t *session) {
             }
         }
         commons_log_error("Session", "Failed to start connection: Limelight returned %d", startResult);
+        add_reason_after_failed_start(session, client, server);
         goto thread_cleanup;
     }
 #if TARGET_WEBOS
@@ -227,7 +259,8 @@ int session_worker(session_t *session) {
             .manager = pcmanager,
     };
     uuidstr_fromstr(&update_ctx.uuid, server->uuid);
-    pcmanager_update_by_host(&update_ctx, server->serverInfo.address, server->extPort, true);
+    int refreshed = pcmanager_update_by_host(&update_ctx, server->serverInfo.address, server->extPort, true);
+    add_reason_after_host_ended(session, &update_ctx.uuid, refreshed);
 
     // Don't always reset status as error state should be kept
     session_set_state(session, STREAMING_NONE);

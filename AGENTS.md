@@ -289,3 +289,10 @@ bitrate. Do not "fix" it by changing HEVC. For 120 fps, use HEVC.
   Nightjar's automatic start-bitrate test worse on a shaped link. `app_gs_client_new` sets
   `User-Agent: Aurora/<version> (<platform>)`, which Rubylight lists per device; a request
   without one clears it there, so new `GS_CLIENT`s must keep going through that function.
+- Rubylight says why a device's latest stream failed in serverinfo's `RustHostLastFailure`
+  (English, cleared at the device's next launch). Aurora adds it to the error dialog after a
+  stream the host itself ended (termination -102 to -104 or a raw HRESULT, read from the
+  serverinfo refresh that follows every stream) and after a start refused in the RTSP
+  handshake by Rubylight 3.0+ (`bandwidthProbeVersion`, one extra serverinfo request). Other
+  hosts send no such field, so their errors read as before, and a stream ended without a
+  reason still shows no dialog.

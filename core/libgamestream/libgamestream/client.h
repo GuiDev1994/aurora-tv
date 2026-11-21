@@ -53,6 +53,9 @@ typedef struct _SERVER_DATA {
     char *wake_url;
     /** BandwidthProbeVersion (Rubylight 3.0+): the host serves gs_probe_bandwidth. 0 when absent. */
     int bandwidthProbeVersion;
+    /** RustHostLastFailure (Rubylight): why this device's latest stream failed, in the host's
+     * English words; NULL when it keeps none. The host clears it at the device's next launch. */
+    char *lastFailure;
     PDISPLAY_MODE modes;
     SERVER_INFORMATION serverInfo;
 } SERVER_DATA, *PSERVER_DATA;
