@@ -22,6 +22,13 @@ typedef struct {
     bool recovery_only;
 } adaptive_bitrate_config_t;
 
+/**
+ * Whether Aurora's own adaptive bitrate runs for a stream from server: when the user turned it on
+ * and the host is not Rubylight, which adapts the bitrate itself and hands that over to the client
+ * (for the rest of the session) on the first /bitrate request.
+ */
+bool adaptive_bitrate_client_runs(bool enabled, const SERVER_DATA *server);
+
 adaptive_bitrate_service_t *adaptive_bitrate_start(const adaptive_bitrate_config_t *config);
 
 /* restore=false skips the bitrate-restore / server-disable HTTP round-trips --

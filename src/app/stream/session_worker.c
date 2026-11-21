@@ -197,7 +197,7 @@ int session_worker(session_t *session) {
 #endif
     session_set_state(session, STREAMING_STREAMING);
     bus_pushevent(USER_STREAM_OPEN, NULL, NULL);
-    if (session->config.auto_adjust_bitrate) {
+    if (adaptive_bitrate_client_runs(session->config.auto_adjust_bitrate, server)) {
         adaptive_bitrate_config_t abr_config = {
             .gs_client = client,
             .server = server,
@@ -206,6 +206,8 @@ int session_worker(session_t *session) {
             .recovery_only = false,
         };
         session->abr = adaptive_bitrate_start(&abr_config);
+    } else if (session->config.auto_adjust_bitrate) {
+        commons_log_info("ABR", "Off for this stream: Rubylight adapts the bitrate itself");
     }
     SDL_LockMutex(session->mutex);
     while (!session->interrupted) {

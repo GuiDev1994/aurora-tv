@@ -281,6 +281,10 @@ static int abr_thread(void *userdata) {
     return 0;
 }
 
+bool adaptive_bitrate_client_runs(bool enabled, const SERVER_DATA *server) {
+    return enabled && server != NULL && !server->isRubylight;
+}
+
 adaptive_bitrate_service_t *adaptive_bitrate_start(const adaptive_bitrate_config_t *config) {
     if (!config || !config->gs_client || !config->server) {
         return NULL;
