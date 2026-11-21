@@ -42,6 +42,9 @@ struct session_t {
     SDL_Thread *thread;
     SS4S_Player *player;
     adaptive_bitrate_service_t *abr;
+    /* Why the connection ended (connectionTerminated) and the stage a start failed at. */
+    int termination_code;
+    int failed_stage;
 #if TARGET_WEBOS
     webos_game_mode_state_t *webos_game_mode;
 #endif

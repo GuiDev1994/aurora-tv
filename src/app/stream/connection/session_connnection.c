@@ -14,6 +14,7 @@ static void connection_terminated(int errorCode) {
     if (!current_session) {
         return;
     }
+    current_session->termination_code = errorCode;
     if (errorCode == ML_ERROR_GRACEFUL_TERMINATION) {
         session_interrupt(current_session, false, STREAMING_INTERRUPT_HOST);
     } else {
@@ -56,6 +57,7 @@ static void connection_stage_failed(int stage, int errorCode) {
     if (!current_session) {
         return;
     }
+    current_session->failed_stage = stage;
     const char *stageName = LiGetStageName(stage);
     commons_log_error("Session", "Connection failed at stage %d (%s), errorCode = %d (%s)", stage, stageName, errorCode,
                       strerror(errorCode));
