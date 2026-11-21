@@ -660,6 +660,11 @@ msgstr ""
 msgid "Profile"
 msgstr ""
 
+#: src/app/ui/settings/panes/experimental.pane.c:205
+msgid ""
+"Rubylight hosts adapt the bitrate themselves, so it stays off with them."
+msgstr ""
+
 #: src/app/ui/settings/panes/experimental.pane.c:167
 #: src/app/ui/settings/panes/experimental.pane.c:212
 msgid "Reset"

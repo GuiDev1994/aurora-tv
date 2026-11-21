@@ -289,3 +289,9 @@ bitrate. Do not "fix" it by changing HEVC. For 120 fps, use HEVC.
   Nightjar's automatic start-bitrate test worse on a shaped link. `app_gs_client_new` sets
   `User-Agent: Aurora/<version> (<platform>)`, which Rubylight lists per device; a request
   without one clears it there, so new `GS_CLIENT`s must keep going through that function.
+- Aurora is not a Rubylight-only client. Anything Rubylight-specific is gated on something
+  only Rubylight sends (serverinfo's `RustHostVersion` as `SERVER_DATA.isRubylight`,
+  `BandwidthProbeVersion`, an offer in DESCRIBE), and with Sunshine, Apollo, Vibepollo or GFE
+  Aurora behaves as before. Experimental "Adaptive bitrate" stays off with Rubylight: its
+  `/bitrate` request makes the host hand its own bitrate adaptation and packet pacing to the
+  client for the rest of the session, and Rubylight's controller is the better one.

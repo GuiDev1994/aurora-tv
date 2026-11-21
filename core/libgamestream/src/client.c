@@ -832,6 +832,7 @@ static int load_server_status(GS_CLIENT hnd, PSERVER_DATA server) {
         char *httpsPortText = NULL;
         char *externalPortText = NULL;
         char *bandwidthProbeText = NULL;
+        char *rustHostText = NULL;
 
         ret = GS_INVALID;
 
@@ -918,6 +919,10 @@ static int load_server_status(GS_CLIENT hnd, PSERVER_DATA server) {
             goto cleanup;
         }
 
+        if (xml_search(data->memory, data->size, "RustHostVersion", &rustHostText) != GS_OK) {
+            goto cleanup;
+        }
+
         if (xml_modelist(data->memory, data->size, &server->modes) != GS_OK) {
             goto cleanup;
         }
@@ -943,6 +948,7 @@ static int load_server_status(GS_CLIENT hnd, PSERVER_DATA server) {
         server->httpsPort = httpsPortText == NULL ? 0 : (int) strtol(httpsPortText, NULL, 0);
         server->extPort = externalPortText == NULL ? 0 : (int) strtol(externalPortText, NULL, 0);
         server->bandwidthProbeVersion = bandwidthProbeText == NULL ? 0 : (int) strtol(bandwidthProbeText, NULL, 10);
+        server->isRubylight = rustHostText != NULL && rustHostText[0] != '\0';
 
         if (strstr(stateText, "_SERVER_BUSY") == NULL) {
             // After GFE 2.8, current game remains set even after streaming
@@ -971,6 +977,10 @@ static int load_server_status(GS_CLIENT hnd, PSERVER_DATA server) {
 
         if (serverCodecModeSupportText != NULL) {
             free(serverCodecModeSupportText);
+        }
+
+        if (rustHostText != NULL) {
+            free(rustHostText);
         }
 
         if (bandwidthProbeText != NULL) {
