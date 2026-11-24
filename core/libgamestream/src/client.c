@@ -18,6 +18,7 @@
  */
 
 #include "http.h"
+#include "json.h"
 #include "xml.h"
 #include "client.h"
 #include "errors.h"
@@ -832,6 +833,7 @@ static int load_server_status(GS_CLIENT hnd, PSERVER_DATA server) {
         char *httpsPortText = NULL;
         char *externalPortText = NULL;
         char *bandwidthProbeText = NULL;
+        char *nativeApiText = NULL;
 
         ret = GS_INVALID;
 
@@ -918,6 +920,10 @@ static int load_server_status(GS_CLIENT hnd, PSERVER_DATA server) {
             goto cleanup;
         }
 
+        if (xml_search(data->memory, data->size, "NativeApiVersion", &nativeApiText) != GS_OK) {
+            goto cleanup;
+        }
+
         if (xml_modelist(data->memory, data->size, &server->modes) != GS_OK) {
             goto cleanup;
         }
@@ -943,6 +949,7 @@ static int load_server_status(GS_CLIENT hnd, PSERVER_DATA server) {
         server->httpsPort = httpsPortText == NULL ? 0 : (int) strtol(httpsPortText, NULL, 0);
         server->extPort = externalPortText == NULL ? 0 : (int) strtol(externalPortText, NULL, 0);
         server->bandwidthProbeVersion = bandwidthProbeText == NULL ? 0 : (int) strtol(bandwidthProbeText, NULL, 10);
+        server->nativeApiVersion = nativeApiText == NULL ? 0 : (int) strtol(nativeApiText, NULL, 10);
 
         if (strstr(stateText, "_SERVER_BUSY") == NULL) {
             // After GFE 2.8, current game remains set even after streaming
@@ -975,6 +982,10 @@ static int load_server_status(GS_CLIENT hnd, PSERVER_DATA server) {
 
         if (bandwidthProbeText != NULL) {
             free(bandwidthProbeText);
+        }
+
+        if (nativeApiText != NULL) {
+            free(nativeApiText);
         }
 
         i++;
@@ -1024,24 +1035,23 @@ static int resolve_ports(GS_CLIENT hnd, const char *address, uint16_t port, uint
     return ret;
 }
 
+/* scheme://host:port, with an IPv6 host in brackets and GameStream's default port for 0. */
+static size_t base_url(char *url, size_t ulen, bool secure, const char *address, uint16_t port) {
+    if (port == 0) {
+        port = secure ? 47984 : 47989;
+    }
+    return (size_t) snprintf(url, ulen, strchr(address, ':') != NULL ? "%s://[%s]:%u" : "%s://%s:%u",
+                             secure ? "https" : "http", address, port);
+}
+
 static bool construct_url(GS_CLIENT hnd, char *url, size_t ulen, bool secure, const char *address, uint16_t port,
                           const char *action, const char *fmt, ...) {
     uuidstr_t uuid;
     if (!uuidstr_random(&uuid)) {
         return false;
     }
-    if (port == 0) {
-        port = secure ? 47984 : 47989;
-    }
-    char *const proto = secure ? "https" : "http";
-    size_t w_len = snprintf(url, ulen, "%s://", proto);
-    bool is_ipv6 = strchr(address, ':') != NULL;
-    if (is_ipv6) {
-        w_len += snprintf(url + w_len, ulen - w_len, "[%s]", address);
-    } else {
-        w_len += snprintf(url + w_len, ulen - w_len, "%s", address);
-    }
-    w_len += snprintf(url + w_len, ulen - w_len, ":%u/%s?uniqueid=%s&uuid=%.*s", port, action, hnd->unique_id, 36,
+    size_t w_len = base_url(url, ulen, secure, address, port);
+    w_len += snprintf(url + w_len, ulen - w_len, "/%s?uniqueid=%s&uuid=%.*s", action, hnd->unique_id, 36,
                       uuid.data);
     if (fmt) {
         char params[4096];
@@ -1232,4 +1242,94 @@ int gs_probe_bandwidth(GS_CLIENT hnd, const SERVER_DATA *server, GS_BANDWIDTH_PR
         probe->retry_after_secs = result.retry_after;
     }
     return ret;
+}
+
+static int native_request(GS_CLIENT hnd, const SERVER_DATA *server, const char *path, const char *json_body,
+                          HTTP_DATA *data, GS_NATIVE_STATUS *status) {
+    memset(status, 0, sizeof(*status));
+    char url[1024];
+    size_t w_len = base_url(url, sizeof(url), true, server->serverInfo.address, server_port(server, true));
+    snprintf(url + w_len, sizeof(url) - w_len, "/api/native/v1/%s", path);
+    long http_status = 0;
+    int ret = http_request_keep_body(hnd->http, url, json_body, 10, data, &http_status);
+    if (ret != GS_OK) {
+        return ret;
+    }
+    status->http_status = (int) http_status;
+    if (http_status >= 200 && http_status < 300) {
+        return GS_OK;
+    }
+    char *code = gs_json_string(data->memory, data->size, "error.code");
+    char *message = gs_json_string(data->memory, data->size, "error.message");
+    snprintf(status->code, sizeof(status->code), "%s", code != NULL ? code : "");
+    snprintf(status->message, sizeof(status->message), "%s", message != NULL ? message : "");
+    free(code);
+    free(message);
+    commons_log_warn("GameStream", "Native %s answered HTTP %ld %s: %s", path, http_status, status->code,
+                     status->message);
+    if (status->message[0] != '\0') {
+        return gs_set_error(GS_FAILED, "%s", status->message);
+    }
+    return gs_set_error(GS_FAILED, "Host answered HTTP %ld", http_status);
+}
+
+int gs_get_host_power(GS_CLIENT hnd, const SERVER_DATA *server, GS_HOST_POWER *power, GS_NATIVE_STATUS *status) {
+    if (!hnd || !server || !power || !status) {
+        return GS_INVALID;
+    }
+    memset(power, 0, sizeof(*power));
+    HTTP_DATA *data = http_data_alloc();
+    int ret = native_request(hnd, server, "power", NULL, data, status);
+    if (ret == GS_OK && !gs_host_power_parse(data->memory, data->size, power)) {
+        ret = gs_set_error(GS_INVALID, "Host answered no power state");
+    }
+    http_data_free(data);
+    return ret;
+}
+
+bool gs_host_power_parse(const char *json, size_t len, GS_HOST_POWER *power) {
+    memset(power, 0, sizeof(*power));
+    if (!gs_json_bool(json, len, "restart.available", &power->restart.available) ||
+        !gs_json_bool(json, len, "shutdown.available", &power->shutdown.available)) {
+        return false;
+    }
+    power->restart.reason = gs_json_string(json, len, "restart.reason");
+    power->shutdown.reason = gs_json_string(json, len, "shutdown.reason");
+    power->token = gs_json_string(json, len, "token");
+    gs_json_bool(json, len, "wake_from_off", &power->wake_from_off);
+    power->last_refusal = gs_json_string(json, len, "last_refusal");
+    return true;
+}
+
+const GS_POWER_ACTION *gs_host_power_get_action(const GS_HOST_POWER *power, GS_POWER_KIND kind) {
+    return kind == GS_POWER_RESTART ? &power->restart : &power->shutdown;
+}
+
+int gs_host_power_action(GS_CLIENT hnd, const SERVER_DATA *server, GS_POWER_KIND kind, const char *token,
+                         GS_NATIVE_STATUS *status) {
+    if (!hnd || !server || !status || token == NULL || token[0] == '\0' ||
+        strspn(token, "0123456789abcdefABCDEF") != strlen(token) || strlen(token) > 128) {
+        return gs_set_error(GS_INVALID, "No power token");
+    }
+    char body[160];
+    snprintf(body, sizeof(body), "{\"token\":\"%s\"}", token);
+    const char *path = kind == GS_POWER_RESTART ? "power/restart" : "power/shutdown";
+    HTTP_DATA *data = http_data_alloc();
+    int ret = native_request(hnd, server, path, body, data, status);
+    http_data_free(data);
+    if (ret == GS_OK) {
+        commons_log_info("GameStream", "Host accepted %s (HTTP %d)", path, status->http_status);
+    }
+    return ret;
+}
+
+void gs_host_power_clear(GS_HOST_POWER *power) {
+    if (power == NULL) {
+        return;
+    }
+    free(power->restart.reason);
+    free(power->shutdown.reason);
+    free(power->token);
+    free(power->last_refusal);
+    memset(power, 0, sizeof(*power));
 }
