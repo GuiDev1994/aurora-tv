@@ -46,6 +46,8 @@ typedef struct _SERVER_DATA {
     bool supportsHdr;
     bool unsupported;
     bool isGfe;
+    /** serverinfo has RustHostVersion, which only Rubylight sends. */
+    bool isRubylight;
     int currentGame;
     int serverMajorVersion;
     const char *gsVersion;

@@ -309,3 +309,9 @@ bitrate. Do not "fix" it by changing HEVC. For 120 fps, use HEVC.
   shut down PC" grant, off by default; without it `/power` says so in `reason`. Use 6.1.0 or
   newer: before it, a client that closed the connection right after reading the 202 (as
   libgamestream does, `CURLOPT_FORBID_REUSE`) could leave the PC awake now and then.
+- Aurora is not a Rubylight-only client. Anything Rubylight-specific is gated on something
+  only Rubylight sends (serverinfo's `RustHostVersion` as `SERVER_DATA.isRubylight`,
+  `BandwidthProbeVersion`, an offer in DESCRIBE), and with Sunshine, Apollo, Vibepollo or GFE
+  Aurora behaves as before. Experimental "Adaptive bitrate" stays off with Rubylight: its
+  `/bitrate` request makes the host hand its own bitrate adaptation and packet pacing to the
+  client for the rest of the session, and Rubylight's controller is the better one.

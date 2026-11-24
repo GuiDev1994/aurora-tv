@@ -785,6 +785,13 @@ msgstr "Tasa de bits adaptativa"
 msgid "Profile"
 msgstr "Perfil"
 
+#: src/app/ui/settings/panes/experimental.pane.c:205
+msgid ""
+"Rubylight hosts adapt the bitrate themselves, so it stays off with them."
+msgstr ""
+"Los hosts Rubylight ajustan la tasa de bits por sí mismos, así que con ellos "
+"queda desactivada."
+
 #: src/app/ui/settings/panes/experimental.pane.c:167
 #: src/app/ui/settings/panes/experimental.pane.c:212
 msgid "Reset"

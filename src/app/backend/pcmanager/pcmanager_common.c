@@ -33,6 +33,8 @@ PSERVER_DATA serverdata_clone(const SERVER_DATA *src) {
     server->gsVersion = strdup_nullable(src->gsVersion);
     server->wake_method = src->wake_method;
     server->wake_url = strdup_nullable(src->wake_url);
+    server->isGfe = src->isGfe;
+    server->isRubylight = src->isRubylight;
     server->bandwidthProbeVersion = src->bandwidthProbeVersion;
     server->nativeApiVersion = src->nativeApiVersion;
     server->modes = display_mode_clone(src->modes);

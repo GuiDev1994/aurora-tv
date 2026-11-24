@@ -202,6 +202,7 @@ static lv_obj_t *create_obj(lv_fragment_t *self, lv_obj_t *container) {
     lv_obj_add_event_cb(abr_checkbox, abr_checkbox_cb, LV_EVENT_VALUE_CHANGED, pane);
     lv_obj_add_event_cb(pane->abr_dropdown, reconnect_cb, LV_EVENT_VALUE_CHANGED, pane);
     abr_state_update(pane);
+    pref_desc_label(view, locstr("Rubylight hosts adapt the bitrate themselves, so it stays off with them."), false);
 
     pref_header(view, locstr("Reset"));
     lv_obj_t *reset_btn = lv_btn_create(view);
