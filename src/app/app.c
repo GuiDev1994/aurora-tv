@@ -88,11 +88,27 @@ int app_init(app_t *app, app_settings_loader *settings_loader, int argc, char *a
 #ifndef SDL_HINT_WEBOS_HIDAPI_IGNORE_BLUETOOTH_DEVICES
 #define SDL_HINT_WEBOS_HIDAPI_IGNORE_BLUETOOTH_DEVICES "SDL_WEBOS_HIDAPI_IGNORE_BLUETOOTH_DEVICES"
 #endif
+#ifndef SDL_HINT_WEBOS_ACCESS_POLICY_KEYS_META
+#define SDL_HINT_WEBOS_ACCESS_POLICY_KEYS_META "SDL_WEBOS_ACCESS_POLICY_KEYS_META"
+#endif
+#ifndef SDL_HINT_WEBOS_ACCESS_POLICY_KEYACTION_LAUNCH_APP
+#define SDL_HINT_WEBOS_ACCESS_POLICY_KEYACTION_LAUNCH_APP "SDL_WEBOS_ACCESS_POLICY_KEYACTION_LAUNCH_APP"
+#endif
     SDL_SetHint(SDL_HINT_WEBOS_ACCESS_POLICY_KEYS_BACK, "true");
     SDL_SetHint(SDL_HINT_WEBOS_ACCESS_POLICY_KEYS_EXIT, "true");
     /* Always capture Home (and Win, same policy class) so the TV does not steal them
      * before SDL. Latched at window creation — restart app after changing related settings. */
     SDL_SetHint(SDL_HINT_WEBOS_ACCESS_POLICY_KEYS_HOME, "true");
+    /* webOS 8 and later gate the keyboard super key behind its own policy; older
+     * releases ignore the property (upstream cf96ecc7). */
+    SDL_SetHint(SDL_HINT_WEBOS_ACCESS_POLICY_KEYS_META, "true");
+    /* On webOS 26 the gamepad View button opens the LG Gaming Portal over the app.
+     * SDL-webOS 3.4.16-webos.6 and later honor this (upstream b4ece85e). */
+    SDL_SetHint(SDL_HINT_WEBOS_ACCESS_POLICY_KEYACTION_LAUNCH_APP, "false");
+    /* webOS's network-input-service exposes the virtual Smart Remote (9998:9998) as a
+     * game controller, which became an extra gamepad on the host. SDL-webOS ignores it
+     * itself only from 2.30.12-webos.8; the SDL3 build Aurora ships does not (upstream 08cb7668). */
+    SDL_SetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES, "0x9998/0x9998");
     SDL_SetHint(SDL_HINT_WEBOS_ACCESS_POLICY_RIBBON, "false");
     SDL_SetHint(SDL_HINT_WEBOS_CURSOR_SLEEP_TIME, "5000");
     SDL_SetHint(SDL_HINT_WEBOS_CURSOR_FREQUENCY, "60");
