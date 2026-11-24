@@ -16,7 +16,9 @@
 #include "input/input_gamepad.h"
 #include "app_session.h"
 #include "session_worker.h"
+#include "stream/host_failure.h"
 #include "stream/input/session_virt_mouse.h"
+#include "util/nullable.h"
 
 #if TARGET_WEBOS
 #include "platform/webos/game_mode.h"
@@ -260,6 +262,21 @@ void streaming_error(session_t *session, int code, const char *fmt, ...) {
     // Callers mark fmt with translatable(). "" clears the message, and gettext("") would return the .po header.
     vsnprintf(streaming_errmsg, sizeof(streaming_errmsg) / sizeof(char), fmt[0] ? locstr(fmt) : fmt, arglist);
     va_end(arglist);
+    SDL_UnlockMutex(session->mutex);
+}
+
+void streaming_error_add_host_reason(session_t *session, const char *reason) {
+    if (str_null_or_empty(reason)) {
+        return;
+    }
+    commons_log_info("Session", "Host's reason: %s", reason);
+    char line[640];
+    snprintf(line, sizeof(line), locstr("Reason from the PC: %s"), reason);
+    SDL_LockMutex(session->mutex);
+    if (streaming_errno == GS_OK) {
+        streaming_errno = STREAMING_ERROR_HOST_ENDED;
+    }
+    host_failure_append(streaming_errmsg, sizeof(streaming_errmsg), line);
     SDL_UnlockMutex(session->mutex);
 }
 

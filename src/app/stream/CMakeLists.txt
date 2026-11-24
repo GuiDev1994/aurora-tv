@@ -3,6 +3,7 @@ target_sources(moonlight-lib PRIVATE session.c
         session_worker.c
         session_priv.c
         adaptive_bitrate.c
+        host_failure.c
         link_hint.c)
 
 if (FEATURE_EMBEDDED_SHELL)

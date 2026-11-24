@@ -97,6 +97,11 @@ msgstr ""
 msgid "Connection terminated, errorCode = 0x%x"
 msgstr ""
 
+#: src/app/stream/session.c:274
+#, c-format
+msgid "Reason from the PC: %s"
+msgstr ""
+
 #: src/app/stream/connection/session_connnection.c:40
 msgid "Unstable connection."
 msgstr ""
@@ -598,6 +603,10 @@ msgid "Assertion failure"
 msgstr ""
 
 #: src/app/ui/root.c:404
+msgid "The PC ended the stream"
+msgstr ""
+
+#: src/app/ui/root.c:405
 msgid "Failed to start streaming"
 msgstr ""
 

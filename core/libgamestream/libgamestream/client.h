@@ -57,6 +57,9 @@ typedef struct _SERVER_DATA {
     int bandwidthProbeVersion;
     /** NativeApiVersion (Rubylight 3.0+): /api/native/v1 answers this paired client. 0 when absent. */
     int nativeApiVersion;
+    /** RustHostLastFailure (Rubylight): why this device's latest stream failed, in the host's
+     * English words; NULL when it keeps none. The host clears it at the device's next launch. */
+    char *lastFailure;
     PDISPLAY_MODE modes;
     SERVER_INFORMATION serverInfo;
 } SERVER_DATA, *PSERVER_DATA;

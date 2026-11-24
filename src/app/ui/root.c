@@ -401,8 +401,9 @@ static SDL_AssertState app_assertion_handler_ui(const SDL_AssertData *data, void
 
 static void session_error() {
     static const char *btn_texts[] = {translatable("OK"), ""};
-    lv_obj_t *dialog = lv_msgbox_create_i18n(NULL, locstr("Failed to start streaming"), streaming_errmsg,
-                                             btn_texts, false);
+    const char *title = streaming_errno == STREAMING_ERROR_HOST_ENDED ? locstr("The PC ended the stream")
+                                                                      : locstr("Failed to start streaming");
+    lv_obj_t *dialog = lv_msgbox_create_i18n(NULL, title, streaming_errmsg, btn_texts, false);
     lv_obj_add_event_cb(dialog, session_error_dialog_cb, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_center(dialog);
 }

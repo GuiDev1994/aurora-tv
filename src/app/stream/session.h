@@ -84,6 +84,9 @@ typedef struct session_config_t {
 extern int streaming_errno;
 extern char streaming_errmsg[];
 
+/** streaming_errno of a running stream the host ended and said why (Rubylight). */
+#define STREAMING_ERROR_HOST_ENDED (-1000)
+
 typedef struct app_t app_t;
 typedef struct app_settings_t app_settings_t;
 typedef struct session_t session_t;
@@ -124,3 +127,9 @@ void streaming_enter_overlay(session_t *session, int x, int y, int w, int h);
 void streaming_set_hdr(session_t *session, bool hdr);
 
 void streaming_error(session_t *session, int code, const char *fmt, ...);
+
+/**
+ * Adds the host's reason (RustHostLastFailure) to the stream's error message; nothing when reason
+ * is NULL or empty. A stream that ended without an error yet becomes STREAMING_ERROR_HOST_ENDED.
+ */
+void streaming_error_add_host_reason(session_t *session, const char *reason);

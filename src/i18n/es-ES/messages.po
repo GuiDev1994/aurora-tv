@@ -103,6 +103,11 @@ msgstr "Desconocido"
 msgid "Connection terminated, errorCode = 0x%x"
 msgstr "Conexión finalizada, código de error = 0x%x"
 
+#: src/app/stream/session.c:274
+#, c-format
+msgid "Reason from the PC: %s"
+msgstr "Motivo indicado por el PC: %s"
+
 #: src/app/stream/connection/session_connnection.c:40
 msgid "Unstable connection."
 msgstr "Conexión inestable."
@@ -658,6 +663,10 @@ msgid "Assertion failure"
 msgstr "Fallo de aserción"
 
 #: src/app/ui/root.c:404
+msgid "The PC ended the stream"
+msgstr "El PC terminó la transmisión"
+
+#: src/app/ui/root.c:405
 msgid "Failed to start streaming"
 msgstr "No se pudo iniciar la transmisión"
 
