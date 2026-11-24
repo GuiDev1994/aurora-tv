@@ -31,7 +31,7 @@
 
 #if TARGET_WEBOS
 /* Installer greps this string out of the ELF. */
-static const char aurora_build_tag[] __attribute__((used)) = "aurora-v1.3.4";
+static const char aurora_build_tag[] __attribute__((used)) = "aurora-v1.3.5";
 #endif
 
 /* Rubylight 3.0+ (bandwidthProbeVersion) keeps why it refused this device's stream in the handshake. */
